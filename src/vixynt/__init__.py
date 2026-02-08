@@ -1,3 +1,3 @@
-"""vixynt: Diffusion fine-tuning experiments"""
+"""vixynt: Vision model fine-tuning with npcpy and intelligent data augmentation."""
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'

@@ -1,0 +1,32 @@
+# Example: Diffusion model fine-tuning config
+# Usage:
+#   1. python -m vixynt.prepare_dataset --config experiments/diffusion_example.yaml
+#   2. python -m vixynt.train --config experiments/diffusion_example.yaml
+
+# --- Dataset preparation ---
+source_dir: data/raw_images
+output_dir: data/prepared
+caption_model: gemini-2.0-flash
+caption_provider: gemini
+caption_prompt: >
+  Describe this image in detail for use as a training caption.
+  Focus on the main subject, style, colors, composition, and mood.
+num_augmentations: 5
+use_resnet_augmentation: true
+use_basic_augmentation: true
+device: cpu
+seed: 42
+
+# --- Training ---
+mode: diffusion
+manifest_path: data/prepared/manifest.json
+
+# Diffusion model hyperparameters
+image_size: 128
+channels: 256
+timesteps: 1000
+num_epochs: 100
+batch_size: 4
+learning_rate: 1.0e-5
+checkpoint_frequency: 10
+# resume_from: experiments/diffusion/checkpoints/checkpoint-epoch10-step100.pt

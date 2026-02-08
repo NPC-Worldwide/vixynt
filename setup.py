@@ -5,8 +5,8 @@ with open('README.md', 'r', encoding='utf-8') as f:
 
 setup(
     name='vixynt',
-    version='0.1.0',
-    description='Diffusion fine-tuning experiments using npcpy.ft.diff',
+    version='0.2.0',
+    description='Vision model fine-tuning with npcpy and intelligent data augmentation',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/NPC-Worldwide/vixynt',
@@ -23,6 +23,7 @@ setup(
         'tqdm>=4.62.0',
         'pyyaml>=5.4.0',
         'scikit-learn>=1.0.0',
+        'npcpy>=0.3.0',
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',
