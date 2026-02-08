@@ -1,0 +1,40 @@
+# Full end-to-end pipeline config
+# Usage: python -m vixynt.run_pipeline --config experiments/pipeline_example.yaml
+#
+# Stages:
+#   1. prepare  - discover images, caption with vision LLM, augment
+#   2. train    - train a diffusion model on the prepared dataset
+#   3. evaluate - generate samples and compare against reference images
+
+# --- Dataset preparation ---
+source_dir: data/raw_images
+output_dir: data/prepared
+
+# Captioning: 'vision_llm' for descriptive captions, 'ocr' for text extraction
+caption_mode: vision_llm
+caption_model: gemini-2.0-flash
+caption_provider: gemini
+# caption_prompt: "Custom prompt here"  # uncomment to override default
+
+# Augmentation
+num_augmentations: 5
+use_resnet_augmentation: true
+use_basic_augmentation: true
+device: cpu
+seed: 42
+
+# --- Training ---
+mode: diffusion  # 'diffusion' or 'vision_sft'
+
+# Diffusion hyperparameters
+image_size: 128
+channels: 256
+timesteps: 1000
+num_epochs: 50
+batch_size: 4
+learning_rate: 1.0e-5
+checkpoint_frequency: 10
+
+# --- Evaluation ---
+eval_output_dir: experiments/eval
+eval_num_samples: 16

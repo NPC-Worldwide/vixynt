@@ -10,7 +10,8 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/NPC-Worldwide/vixynt',
-    packages=find_packages(),
+    package_dir={'': 'src'},
+    packages=find_packages(where='src'),
     python_requires='>=3.8',
     install_requires=[
         'torch>=1.9.0',
@@ -25,6 +26,15 @@ setup(
         'scikit-learn>=1.0.0',
         'npcpy>=0.3.0',
     ],
+    entry_points={
+        'console_scripts': [
+            'vixynt-prepare=vixynt.prepare_dataset:main',
+            'vixynt-train=vixynt.train:main',
+            'vixynt-eval=vixynt.evaluate:main',
+            'vixynt-generate=vixynt.generate:main',
+            'vixynt-pipeline=vixynt.run_pipeline:main',
+        ],
+    },
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Science/Research',

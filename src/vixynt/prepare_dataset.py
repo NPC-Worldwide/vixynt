@@ -119,6 +119,69 @@ def caption_batch(
     return captions
 
 
+def ocr_caption_image(
+    image_path: Union[str, Path],
+    prompt: str = '<image>\nFree OCR. ',
+    model_id: str = 'unsloth/DeepSeek-OCR',
+) -> str:
+    """Extract text from an image using npcpy's DeepSeek OCR.
+
+    Useful for document images, screenshots, or text-heavy content where
+    a descriptive caption is less appropriate than extracted text.
+
+    Args:
+        image_path: Path to the image file.
+        prompt: OCR prompt (default is DeepSeek free OCR).
+        model_id: HuggingFace model ID for OCR.
+
+    Returns:
+        Extracted text string.
+    """
+    from npcpy.gen.ocr import deepseek_ocr
+
+    return deepseek_ocr(
+        image=str(image_path),
+        prompt=prompt,
+        model_id=model_id,
+    )
+
+
+def ocr_caption_batch(
+    image_paths: List[Path],
+    prompt: str = '<image>\nFree OCR. ',
+    model_id: str = 'unsloth/DeepSeek-OCR',
+    existing_captions: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """OCR-caption a batch of images, skipping any with existing captions.
+
+    Args:
+        image_paths: List of image file paths.
+        prompt: OCR prompt.
+        model_id: DeepSeek OCR model ID.
+        existing_captions: Dict mapping filename -> caption to skip.
+
+    Returns:
+        Dict mapping filename -> extracted text for all images.
+    """
+    captions = dict(existing_captions or {})
+    to_caption = [p for p in image_paths if p.name not in captions]
+
+    if not to_caption:
+        logger.info("All images already have OCR captions, skipping.")
+        return captions
+
+    logger.info(f"OCR captioning {len(to_caption)} images with {model_id}...")
+    for img_path in tqdm(to_caption, desc="OCR"):
+        try:
+            text = ocr_caption_image(img_path, prompt=prompt, model_id=model_id)
+            captions[img_path.name] = text
+        except Exception as e:
+            logger.warning(f"OCR failed for {img_path.name}: {e}")
+            captions[img_path.name] = ""
+
+    return captions
+
+
 def augment_dataset(
     image_paths: List[Path],
     output_dir: Union[str, Path],
@@ -237,6 +300,7 @@ def prepare_dataset(
     caption_model: str = 'gemini-2.0-flash',
     caption_provider: str = 'gemini',
     caption_prompt: Optional[str] = None,
+    caption_mode: str = 'vision_llm',
     num_augmentations: int = 5,
     use_resnet_augmentation: bool = True,
     use_basic_augmentation: bool = True,
@@ -245,12 +309,13 @@ def prepare_dataset(
     skip_captioning: bool = False,
     captions_file: Optional[str] = None,
     api_key: Optional[str] = None,
+    ocr_model_id: str = 'unsloth/DeepSeek-OCR',
 ) -> str:
     """Full dataset preparation pipeline.
 
     Steps:
         1. Discover images in source_dir.
-        2. Generate captions with a vision LLM (or load existing).
+        2. Generate captions with a vision LLM or OCR (or load existing).
         3. Augment images with vixynt augmentors.
         4. Build and save a training manifest.
 
@@ -260,6 +325,8 @@ def prepare_dataset(
         caption_model: Vision LLM model name.
         caption_provider: Vision LLM provider.
         caption_prompt: Custom captioning prompt (uses default if None).
+        caption_mode: Captioning strategy - 'vision_llm' for descriptive
+            captions or 'ocr' for text extraction via DeepSeek OCR.
         num_augmentations: Augmented variations per image per strategy.
         use_resnet_augmentation: Enable ResNet-based augmentation.
         use_basic_augmentation: Enable basic augmentation.
@@ -268,6 +335,7 @@ def prepare_dataset(
         skip_captioning: Skip the captioning step entirely.
         captions_file: Path to existing captions JSON to load/merge.
         api_key: API key for the captioning provider.
+        ocr_model_id: HuggingFace model ID for OCR mode.
 
     Returns:
         Path to the saved manifest JSON file.
@@ -297,6 +365,12 @@ def prepare_dataset(
 
     if skip_captioning:
         captions = existing_captions
+    elif caption_mode == 'ocr':
+        captions = ocr_caption_batch(
+            image_paths,
+            model_id=ocr_model_id,
+            existing_captions=existing_captions,
+        )
     else:
         default_prompt = (
             'Describe this image in detail for use as a training caption. '
@@ -348,8 +422,10 @@ def prepare_dataset(
     prep_config = {
         'source_dir': str(source_dir),
         'output_dir': str(output_dir),
+        'caption_mode': caption_mode,
         'caption_model': caption_model,
         'caption_provider': caption_provider,
+        'ocr_model_id': ocr_model_id,
         'num_augmentations': num_augmentations,
         'use_resnet_augmentation': use_resnet_augmentation,
         'use_basic_augmentation': use_basic_augmentation,
@@ -391,6 +467,16 @@ def main():
     parser.add_argument(
         '--caption-prompt', type=str, default=None,
         help='Custom captioning prompt',
+    )
+    parser.add_argument(
+        '--caption-mode', type=str, default='vision_llm',
+        choices=['vision_llm', 'ocr'],
+        help='Captioning strategy: vision_llm for descriptive captions, '
+             'ocr for text extraction via DeepSeek OCR',
+    )
+    parser.add_argument(
+        '--ocr-model-id', type=str, default='unsloth/DeepSeek-OCR',
+        help='HuggingFace model ID for OCR captioning mode',
     )
     parser.add_argument(
         '--num-augmentations', type=int, default=5,
@@ -439,6 +525,8 @@ def main():
         caption_model = config.get('caption_model', args.caption_model)
         caption_provider = config.get('caption_provider', args.caption_provider)
         caption_prompt = config.get('caption_prompt', args.caption_prompt)
+        caption_mode = config.get('caption_mode', args.caption_mode)
+        ocr_model_id = config.get('ocr_model_id', args.ocr_model_id)
         num_augmentations = config.get('num_augmentations', args.num_augmentations)
         use_resnet = config.get('use_resnet_augmentation', not args.no_resnet)
         use_basic = config.get('use_basic_augmentation', not args.no_basic)
@@ -453,6 +541,8 @@ def main():
         caption_model = args.caption_model
         caption_provider = args.caption_provider
         caption_prompt = args.caption_prompt
+        caption_mode = args.caption_mode
+        ocr_model_id = args.ocr_model_id
         num_augmentations = args.num_augmentations
         use_resnet = not args.no_resnet
         use_basic = not args.no_basic
@@ -468,6 +558,7 @@ def main():
         caption_model=caption_model,
         caption_provider=caption_provider,
         caption_prompt=caption_prompt,
+        caption_mode=caption_mode,
         num_augmentations=num_augmentations,
         use_resnet_augmentation=use_resnet,
         use_basic_augmentation=use_basic,
@@ -476,6 +567,7 @@ def main():
         skip_captioning=skip_captioning,
         captions_file=captions_file,
         api_key=api_key,
+        ocr_model_id=ocr_model_id,
     )
 
     print(f"\nDataset prepared successfully!")
