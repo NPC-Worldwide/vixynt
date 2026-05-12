@@ -8,8 +8,6 @@ const IS_DEV = process.env.NODE_ENV === 'development' || process.argv.includes('
 const BACKEND_PORT = IS_DEV ? '5437' : '5337';
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
 
-let backendProcess: ReturnType<typeof spawn> | null = null;
-
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 900, minHeight: 600,
@@ -28,66 +26,6 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-
-// Backend helpers
-async function isBackendAlive(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/health`, { method: 'GET', signal: AbortSignal.timeout(2000) });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function getPythonPath(): string | null {
-  const candidates = [
-    path.join(os.homedir(), '.npcsh', 'venv', 'bin', 'python3'),
-    path.join(os.homedir(), '.npcsh', 'venv', 'Scripts', 'python.exe'),
-    path.join(os.homedir(), '.venv', 'bin', 'python3'),
-    path.join(os.homedir(), '.venv', 'Scripts', 'python.exe'),
-  ];
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
-  }
-  try {
-    const which = require('child_process').execSync('which python3 || which python', { encoding: 'utf8' }).trim();
-    if (which) return which;
-  } catch {}
-  return null;
-}
-
-async function ensureBackend(): Promise<boolean> {
-  if (await isBackendAlive()) return true;
-  const python = getPythonPath();
-  if (!python) {
-    console.error('[Vixynt] No Python found to start backend');
-    return false;
-  }
-  try {
-    backendProcess = spawn(python, ['-m', 'npcpy.serve'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-      env: {
-        ...process.env,
-        INCOGNIDE_PORT: String(BACKEND_PORT),
-        FLASK_DEBUG: '1',
-        PYTHONUNBUFFERED: '1',
-        PYTHONIOENCODING: 'utf-8',
-        HOME: os.homedir(),
-      },
-    });
-    backendProcess.stdout?.on('data', (d) => console.log('[Backend]', d.toString().trim()));
-    backendProcess.stderr?.on('data', (d) => console.error('[Backend]', d.toString().trim()));
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 500));
-      if (await isBackendAlive()) return true;
-    }
-    return false;
-  } catch (err) {
-    console.error('[Vixynt] Failed to start backend:', err);
-    return false;
-  }
-}
 
 function resolveHelperScript(scriptName: string): string | null {
   const candidates = [
@@ -130,6 +68,23 @@ function shellOutHelper(pythonPath: string, scriptName: string, payload: any): P
       resolve({ success: false, error: `Failed to write to helper stdin: ${(err as Error).message}` });
     }
   });
+}
+
+function getPythonPath(): string | null {
+  const candidates = [
+    path.join(os.homedir(), '.npcsh', 'venv', 'bin', 'python3'),
+    path.join(os.homedir(), '.npcsh', 'venv', 'Scripts', 'python.exe'),
+    path.join(os.homedir(), '.venv', 'bin', 'python3'),
+    path.join(os.homedir(), '.venv', 'Scripts', 'python.exe'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  try {
+    const which = require('child_process').execSync('which python3 || which python', { encoding: 'utf8' }).trim();
+    if (which) return which;
+  } catch {}
+  return null;
 }
 
 // File-system IPC
@@ -199,7 +154,7 @@ ipcMain.handle('open-in-native-explorer', async (_, filePath: string) => {
   shell.showItemInFolder(filePath); return { success: true };
 });
 
-// Image generation IPC
+// Image generation IPC — proxy to the shared backend exactly like incognide does
 ipcMain.handle('generate_images', async (_, { prompt, n, model, provider, attachments, baseFilename, currentPath, workspacePath, width, height, customModelPath }) => {
   console.log(`[Main Process] Image gen request: n=${n} prompt="${prompt}" model="${model}" provider=${provider}`);
 
@@ -209,10 +164,6 @@ ipcMain.handle('generate_images', async (_, { prompt, n, model, provider, attach
   const needsLocalVenv = provider === 'diffusers' || !!customModelPath;
 
   if (!needsLocalVenv) {
-    const backendReady = await ensureBackend();
-    if (!backendReady) {
-      return { error: 'Backend is not running and could not be started. Configure a Python venv with npcpy installed.' };
-    }
     try {
       const response = await fetch(`${BACKEND_URL}/api/generate_images`, {
         method: 'POST',
@@ -228,7 +179,7 @@ ipcMain.handle('generate_images', async (_, { prompt, n, model, provider, attach
       return { images: data.images, filenames: data.filenames, generation_id: data.generation_id };
     } catch (error: any) {
       console.error('Error generating images via backend:', error);
-      return { error: error.message || 'Image generation failed' };
+      return { error: error.message || 'Image generation failed — is the backend running?' };
     }
   }
 
@@ -276,10 +227,6 @@ ipcMain.handle('save-generated-image', async (_, blob: any, folderPath: string, 
 });
 
 ipcMain.handle('generative-fill', async (_, params) => {
-  const backendReady = await ensureBackend();
-  if (!backendReady) {
-    return { error: 'Backend is not running and could not be started. Configure a Python venv with npcpy installed.' };
-  }
   try {
     const response = await fetch(`${BACKEND_URL}/api/generative_fill`, {
       method: 'POST',
