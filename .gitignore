@@ -111,3 +111,9 @@ experiments/results/
 *.pth
 *.pt
 *.pkl
+
+# Node / Electron
+node_modules/
+dist-electron/
+release/
+.DS_Store
