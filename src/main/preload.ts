@@ -22,6 +22,7 @@ export interface IElectronAPI {
   generativeFill: (params: any) => Promise<any>;
   fineTuneDiffusers: (params: any) => Promise<any>;
   getFineTuneStatus: (jobId: string) => Promise<any>;
+  getAvailableImageModels: (currentPath: string) => Promise<any>;
 }
 
 contextBridge.exposeInMainWorld('api', {
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   generativeFill: (params: any) => ipcRenderer.invoke('generative-fill', params),
   fineTuneDiffusers: (params: any) => ipcRenderer.invoke('finetune-diffusers', params),
   getFineTuneStatus: (jobId: string) => ipcRenderer.invoke('get-finetune-status', jobId),
+  getAvailableImageModels: (currentPath: string) => ipcRenderer.invoke('getAvailableImageModels', currentPath),
 } as IElectronAPI);
 
 declare global {

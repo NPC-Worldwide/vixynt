@@ -65,35 +65,7 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
   reader.readAsText(file);
 });
 
-    const handleStartConversationFromViewer = async (images) => {
-        if (!images || images.length === 0) return;
-
-        const attachmentsToAdd = images.map(img => {
-            const filePath = img.path;
-            return {
-                id: generateId(),
-                name: getFileName(filePath),
-                path: filePath,
-                size: 0,
-                type: 'image/jpeg',
-                preview: `file://${filePath}`
-            };
-        });
-
-        setUploadedFiles(prev => [...prev, ...attachmentsToAdd]);
-        setPhotoViewerOpen(false);
-    };
-    const handleImagesClick = () => {
-        setPhotoViewerType('images');
-        setPhotoViewerOpen(true);
-    };
-
-    const handleScreenshotsClick = () => {
-        setPhotoViewerType('screenshots');
-        setPhotoViewerOpen(true);
-    };
-
-const PhotoViewer = ({ currentPath, onStartConversation }) => {
+const PhotoViewer = ({ currentPath, onStartConversation }: { currentPath: string; onStartConversation?: (images: any[]) => void }) => {
     const aiEnabled = useAiEnabled();
     const [activeTab, _setActiveTab] = useState(() => localStorage.getItem('vixynt_activeTab') || 'gallery');
     const setActiveTab = useCallback((tab: string) => {
@@ -221,7 +193,7 @@ const [isDrawingBrush, setIsDrawingBrush] = useState(false);
 
     const activeSource = imageSources.find(s => s.id === activeSourceId);
     const sourceImages = (activeSource?.images || []);
-    const filteredImages = sourceImages.filter(img => img.toLowerCase().includes(searchTerm.toLowerCase()));
+    const filteredImages = sourceImages.filter(img => img.path.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const [numImagesToGenerate, setNumImagesToGenerate] = useState(1);
     const [selectedGeneratedImages, setSelectedGeneratedImages] = useState(new Set());
@@ -659,7 +631,7 @@ const renderFineTuneModal = () => {
       const updatedSources = await Promise.all(
         sourcesToLoad.map(async (source) => {
           try {
-            await window.api?.ensureDirectory?.(source.path);
+            await window.api?.ensureDir?.(source.path);
             const result = await window.api?.readDirectoryImages?.(source.path) || [];
             // Handle both old (string[]) and new ({ images, deeperFolders }) formats
             const images = Array.isArray(result) ? result : (result.images || []).map((img: any) => typeof img === 'string' ? img : img.url);
@@ -692,7 +664,7 @@ const renderFineTuneModal = () => {
                 const updatedSources = await Promise.all(
                     initialSources.map(async (source) => {
                         try {
-                            await window.api?.ensureDirectory?.(source.path);
+                            await window.api?.ensureDir?.(source.path);
                             const result = await window.api?.readDirectoryImages?.(source.path) || [];
                             const images = Array.isArray(result) ? result : (result.images || []).map((img: any) => typeof img === 'string' ? img : img.url);
                             const deeperFolders = Array.isArray(result) ? [] : (result.deeperFolders || []);
@@ -1327,8 +1299,9 @@ useEffect(() => {
     } catch (err) { setError('Upload failed: ' + err.message); }
   };
 
+  const isMac = navigator.platform.startsWith('Mac');
   const renderSidebar = () => (
-    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200`}>
+    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200 ${isMac ? 'pt-8' : ''}`}>
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         className="p-2 border-b theme-border hover:bg-white/5 transition-colors flex items-center justify-center"
@@ -1474,12 +1447,12 @@ const sortedAndFilteredImages = React.useMemo(() => {
     const allImages = source?.images || [];
 
     let result = allImages.filter(img =>
-        img.toLowerCase().includes(searchTerm.toLowerCase())
+        img.path.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     if (filterType !== 'all') {
         result = result.filter(img => {
-            const ext = img.split('.').pop().toLowerCase();
+            const ext = img.path.split('.').pop().toLowerCase();
             if (filterType === 'jpg') return ext === 'jpg' || ext === 'jpeg';
             if (filterType === 'png') return ext === 'png';
             if (filterType === 'webp') return ext === 'webp';
@@ -1489,12 +1462,12 @@ const sortedAndFilteredImages = React.useMemo(() => {
     }
 
     result.sort((a, b) => {
-        const nameA = getFileName(a).toLowerCase();
-        const nameB = getFileName(b).toLowerCase();
-        const extA = a.split('.').pop().toLowerCase();
-        const extB = b.split('.').pop().toLowerCase();
-        const metaA = imageMetaCache[a] || {};
-        const metaB = imageMetaCache[b] || {};
+        const nameA = getFileName(a.path).toLowerCase();
+        const nameB = getFileName(b.path).toLowerCase();
+        const extA = a.path.split('.').pop().toLowerCase();
+        const extB = b.path.split('.').pop().toLowerCase();
+        const metaA = imageMetaCache[a.path] || {};
+        const metaB = imageMetaCache[b.path] || {};
 
         let comparison = 0;
         if (sortBy === 'name') {
@@ -1514,7 +1487,7 @@ const sortedAndFilteredImages = React.useMemo(() => {
         return sortOrder === 'asc' ? comparison : -comparison;
     });
 
-    return result;
+    return result.map(img => img.url);
 }, [imageSources, activeSourceId, searchTerm, sortBy, sortOrder, filterType, imageMetaCache]);
 
 useEffect(() => {
@@ -2175,9 +2148,9 @@ const handleUseForGeneration = () => {
             <div className="w-[420px] border-r theme-border theme-bg-secondary flex flex-col overflow-hidden">
                 <div className="p-4 border-b theme-border">
                     <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-semibold text-white">Prompt</label>
+                        <label className="text-sm font-semibold theme-text-primary">Prompt</label>
                         {generating && (
-                            <span className="flex items-center gap-1.5 text-xs text-purple-400">
+                            <span className="flex items-center gap-1.5 text-xs text-purple-300">
                                 <Loader size={12} className="animate-spin" />
                                 Generating...
                             </span>
@@ -2195,7 +2168,7 @@ const handleUseForGeneration = () => {
                             <button
                                 key={t.label}
                                 onClick={() => setGeneratePrompt(prev => prev ? `${prev} ${t.prompt}` : t.prompt)}
-                                className="px-2 py-0.5 text-[10px] rounded-full bg-purple-600/20 text-purple-300 hover:bg-purple-600/40 transition-colors"
+                                className="px-2 py-0.5 text-[10px] rounded-full bg-purple-600/20 text-purple-200 hover:bg-purple-600/40 transition-colors"
                             >
                                 {t.label}
                             </button>
@@ -2205,7 +2178,7 @@ const handleUseForGeneration = () => {
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     <div>
-                        <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">Provider</label>
+                        <label className="text-xs font-medium text-gray-200 uppercase tracking-wide mb-2 block">Provider</label>
                         <div className="grid grid-cols-3 gap-2">
                             {sortedProviders.map(provider => {
                                 const info = getProviderInfo(provider);
@@ -2226,7 +2199,7 @@ const handleUseForGeneration = () => {
                                         }`}
                                     >
                                         <div className="text-lg mb-0.5">{info.icon}</div>
-                                        <div className="text-[10px] font-medium truncate">{info.name}</div>
+                                        <div className="text-[10px] font-medium truncate text-gray-200">{info.name}</div>
                                     </button>
                                 );
                             })}
@@ -2234,7 +2207,7 @@ const handleUseForGeneration = () => {
                     </div>
 
                     <div>
-                        <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">Model</label>
+                        <label className="text-xs font-medium text-gray-200 uppercase tracking-wide mb-2 block">Model</label>
                         <select
                             value={selectedModel}
                             onChange={e => setSelectedModel(e.target.value)}
@@ -2249,7 +2222,7 @@ const handleUseForGeneration = () => {
                     </div>
 
                     <div>
-                        <label className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2 block">
+                        <label className="text-xs font-medium text-gray-200 uppercase tracking-wide mb-2 block">
                             References ({selectedImageGroup.size + selectedGeneratedImages.size})
                         </label>
                         <div className="flex flex-wrap gap-2 p-2 rounded-lg bg-black/20 border border-white/10">
@@ -2295,7 +2268,7 @@ const handleUseForGeneration = () => {
                                         console.error('Add reference failed:', err);
                                     }
                                 }}
-                                className="w-14 h-14 rounded border-2 border-dashed border-white/20 hover:border-purple-500 hover:bg-purple-500/10 flex items-center justify-center text-white/50 hover:text-purple-300 transition-colors"
+                                className="w-14 h-14 rounded border-2 border-dashed border-white/20 hover:border-purple-500 hover:bg-purple-500/10 flex items-center justify-center text-white/70 hover:text-purple-200 transition-colors"
                                 title="Add reference from files (project or global)"
                             >
                                 <Plus size={20} />
@@ -2304,30 +2277,30 @@ const handleUseForGeneration = () => {
                     </div>
 
                     <details className="group">
-                        <summary className="text-xs font-medium text-gray-400 uppercase tracking-wide cursor-pointer flex items-center gap-2 select-none">
+                        <summary className="text-xs font-medium text-gray-200 uppercase tracking-wide cursor-pointer flex items-center gap-2 select-none">
                             <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
                             Output Settings
                         </summary>
                         <div className="mt-3 space-y-3 pl-4">
                             <div>
-                                <label className="text-xs text-gray-400 mb-1 block">Save Location</label>
+                                <label className="text-xs text-gray-200 mb-1 block">Save Location</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
                                         onClick={() => setActiveSourceId('project-images')}
-                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'project-images' ? 'bg-green-600/30 text-green-300 border border-green-500' : 'bg-white/5 text-gray-400 border border-white/10'}`}
+                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'project-images' ? 'bg-green-600/30 text-green-200 border border-green-500' : 'bg-white/5 text-gray-300 border border-white/10'}`}
                                     >
                                         <Folder size={12} /> Project
                                     </button>
                                     <button
                                         onClick={() => setActiveSourceId('global-images')}
-                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'global-images' ? 'bg-blue-600/30 text-blue-300 border border-blue-500' : 'bg-white/5 text-gray-400 border border-white/10'}`}
+                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'global-images' ? 'bg-blue-600/30 text-blue-200 border border-blue-500' : 'bg-white/5 text-gray-300 border border-white/10'}`}
                                     >
                                         <ImageIcon size={12} /> Global
                                     </button>
                                 </div>
                             </div>
                             <div>
-                                <label className="text-xs text-gray-400 mb-1 block">Filename Prefix</label>
+                                <label className="text-xs text-gray-200 mb-1 block">Filename Prefix</label>
                                 <input
                                     type="text"
                                     value={generateFilename}
@@ -5444,11 +5417,11 @@ const renderDarkRoomLegacy = () => {
                                 {filteredImages.slice(0, 20).map((imgPath, idx) => (
                                     <div
                                         key={idx}
-                                        onClick={() => setSelectedImage(imgPath.startsWith('media://') ? imgPath : `media://${imgPath}`)}
+                                        onClick={() => setSelectedImage(imgPath.path.startsWith('media://') ? imgPath.path : `media://${imgPath.path}`)}
                                         className="aspect-square rounded-lg overflow-hidden cursor-pointer bg-gray-800 hover:ring-2 hover:ring-blue-500 transition-all"
                                     >
                                         <img
-                                            src={imgPath.startsWith('media://') ? imgPath : `media://${imgPath}`}
+                                            src={imgPath.path.startsWith('media://') ? imgPath.path : `media://${imgPath.path}`}
                                             className="w-full h-full object-cover"
                                             alt={`Image ${idx}`}
                                         />
@@ -5761,7 +5734,7 @@ return (
     <div className="flex-1 flex overflow-hidden">
       {renderSidebar()}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className="flex-shrink-0 px-2 py-1">
+        <div className={`flex-shrink-0 px-2 py-1 ${isMac && sidebarCollapsed ? 'pl-16' : ''}`}>
           <div className="relative group inline-block">
             <button className="flex items-center gap-2 px-3 py-1.5 theme-bg-secondary theme-hover rounded-lg border theme-border text-sm">
               <CurrentIcon size={16} className="text-blue-400"/>
@@ -5798,19 +5771,6 @@ return (
                 })}
                 <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Edit</div>
                 {filteredModes.filter(m => m.group === 'edit').map(mode => {
-                  const ModeIcon = mode.icon;
-                  return (
-                    <button
-                      key={mode.id}
-                      onClick={() => setActiveTab(mode.id)}
-                      className={`w-full px-3 py-1.5 flex items-center gap-2 text-sm hover:bg-gray-700 ${activeTab === mode.id ? 'text-blue-400 bg-blue-600/20' : 'text-gray-300'}`}
-                    >
-                      <ModeIcon size={14}/>{mode.name}
-                    </button>
-                  );
-                })}
-                <div className="px-3 py-1 text-xs text-gray-500 uppercase mt-1">Manage</div>
-                {filteredModes.filter(m => m.group === 'manage').map(mode => {
                   const ModeIcon = mode.icon;
                   return (
                     <button

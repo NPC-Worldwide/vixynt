@@ -1,31 +1,144 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const IS_DEV = process.env.NODE_ENV === 'development' || process.argv.includes('--dev');
-const BACKEND_PORT = IS_DEV ? '5437' : '5337';
+const BACKEND_PORT = IS_DEV ? '7140' : '5140';
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'media',
+  privileges: { standard: true, supportFetchAPI: true, stream: true, secure: true, corsEnabled: true }
+}]);
+
+let backendProcess: ReturnType<typeof spawn> | null = null;
+
+function killBackendProcess() {
+  if (!backendProcess) return;
+  console.log('[Main] Killing backend process');
+  if (process.platform === 'win32') {
+    try { if (backendProcess.pid) require('child_process').execSync(`taskkill /F /T /PID ${backendProcess.pid}`, { stdio: 'ignore' }); } catch {}
+  } else {
+    try { if (backendProcess.pid) process.kill(-backendProcess.pid, 'SIGTERM'); } catch {}
+  }
+  backendProcess = null;
+}
+
+function spawnBackendProcess(pythonPath: string, args: string[], env: Record<string, string>) {
+  console.log(`[Main] Spawning backend: ${pythonPath} ${args.join(' ')}`);
+  const proc = spawn(pythonPath, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    detached: process.platform !== 'win32',
+    env,
+  });
+  proc.stdout.on('data', (d) => console.log('[Backend stdout]', d.toString().trim()));
+  proc.stderr.on('data', (d) => console.error('[Backend stderr]', d.toString().trim()));
+  proc.on('error', (err) => console.error('[Backend error]', err.message));
+  proc.on('close', (code) => console.log(`[Backend] exited with code ${code}`));
+  return proc;
+}
+
+async function waitForServer(maxAttempts = 60, delay = 1000) {
+  for (let i = 1; i <= maxAttempts; i++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (res.ok) { console.log(`[Main] Backend ready (attempt ${i})`); return true; }
+    } catch {}
+    await new Promise(r => setTimeout(r, delay));
+  }
+  console.error('[Main] Backend failed to start');
+  return false;
+}
+
+function getBackendPythonPath(): string | null {
+  const rc = path.join(os.homedir(), '.npcshrc');
+  try {
+    if (fs.existsSync(rc)) {
+      const content = fs.readFileSync(rc, 'utf8');
+      const m = content.match(/BACKEND_PYTHON_PATH=["']?([^"'\n]+)["']?/);
+      if (m?.[1]?.trim()) {
+        const p = m[1].trim().replace(/^~/, os.homedir());
+        if (fs.existsSync(p)) return p;
+      }
+    }
+  } catch {}
+  return getPythonPath();
+}
+
+async function startBackend() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    const res = await fetch(`${BACKEND_URL}/api/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (res.ok) { console.log('[Main] Backend already running'); return true; }
+  } catch {}
+
+  const python = getBackendPythonPath();
+  if (!python) {
+    console.error('[Main] No Python found for backend');
+    return false;
+  }
+
+  const backendEnv = {
+    ...process.env,
+    VIXYNT_PORT: BACKEND_PORT,
+    FRONTEND_PORT: IS_DEV ? '7340' : '6340',
+    FLASK_DEBUG: IS_DEV ? '1' : '0',
+    PYTHONUNBUFFERED: '1',
+    PYTHONIOENCODING: 'utf-8',
+    HOME: os.homedir(),
+    NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
+  };
+
+  const scriptPath = path.join(__dirname, '..', 'resources', 'vixynt_serve.py');
+  backendProcess = spawnBackendProcess(python, [scriptPath], backendEnv);
+  return await waitForServer();
+}
+
+app.on('before-quit', () => killBackendProcess());
 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 900, minHeight: 600,
     titleBarStyle: 'hiddenInset',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
     },
   });
-  if (IS_DEV) { win.loadURL('http://localhost:5173'); win.webContents.openDevTools(); }
+  if (IS_DEV) { win.loadURL('http://localhost:7340'); win.webContents.openDevTools(); }
   else { win.loadFile(path.join(__dirname, '../dist/index.html')); }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  protocol.registerFileProtocol('media', (request, callback) => {
+    const url = request.url.replace('media://', '');
+    try { callback(decodeURIComponent(url)); } catch (err) { console.error(err); }
+  });
+  await startBackend();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+
+function expandHomeDir(filePath: string): string {
+  if (filePath.startsWith('~')) {
+    return path.join(os.homedir(), filePath.slice(1).replace(/^\//, ''));
+  }
+  return filePath;
+}
 
 function resolveHelperScript(scriptName: string): string | null {
   const candidates = [
@@ -90,30 +203,37 @@ function getPythonPath(): string | null {
 // File-system IPC
 ipcMain.handle('readDirectory', async (_, dirPath: string) => {
   try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const resolved = expandHomeDir(dirPath);
+    const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
     return entries.map(e => ({
-      name: e.name, path: path.join(dirPath, e.name), isDirectory: e.isDirectory(),
-      size: e.isFile() ? fs.statSync(path.join(dirPath, e.name)).size : 0,
-      modified: e.isFile() ? fs.statSync(path.join(dirPath, e.name)).mtime.toISOString() : '',
+      name: e.name, path: path.join(resolved, e.name), isDirectory: e.isDirectory(),
+      size: e.isFile() ? fs.statSync(path.join(resolved, e.name)).size : 0,
+      modified: e.isFile() ? fs.statSync(path.join(resolved, e.name)).mtime.toISOString() : '',
     }));
   } catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('readDirectoryImages', async (_, dirPath: string) => {
   try {
-    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const resolved = expandHomeDir(dirPath);
+    const entries = await fs.promises.readdir(resolved, { withFileTypes: true });
     const images = entries.filter(e => {
       const ext = e.name.split('.').pop()?.toLowerCase() || '';
       return e.isFile() && ['png','jpg','jpeg','gif','webp','svg','bmp','ico'].includes(ext);
-    }).map(e => ({
-      name: e.name, path: path.join(dirPath, e.name),
-      size: fs.statSync(path.join(dirPath, e.name)).size,
-      modified: fs.statSync(path.join(dirPath, e.name)).mtime.toISOString(),
-    }));
+    }).map(e => {
+      const full = path.join(resolved, e.name);
+      return {
+        name: e.name,
+        path: full,
+        url: `media://${full}`,
+        size: fs.statSync(full).size,
+        modified: fs.statSync(full).mtime.toISOString(),
+      };
+    });
     return images;
   } catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('ensureDirectory', async (_, dirPath: string) => {
-  try { await fs.promises.mkdir(dirPath, { recursive: true }); return { success: true }; }
+  try { await fs.promises.mkdir(expandHomeDir(dirPath), { recursive: true }); return { success: true }; }
   catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('getHomeDir', async () => os.homedir());
@@ -126,32 +246,49 @@ ipcMain.handle('show-save-dialog', async (_, options) => {
   return dialog.showSaveDialog(win, options);
 });
 ipcMain.handle('read-file-content', async (_, filePath: string) => {
-  try { const content = await fs.promises.readFile(filePath, 'utf-8'); return { content }; }
+  try { const content = await fs.promises.readFile(expandHomeDir(filePath), 'utf-8'); return { content }; }
   catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('write-file-content', async (_, filePath: string, content: string) => {
-  try { await fs.promises.writeFile(filePath, content, 'utf-8'); return { success: true }; }
+  try { await fs.promises.writeFile(expandHomeDir(filePath), content, 'utf-8'); return { success: true }; }
   catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('read-file-buffer', async (_, filePath: string) => {
-  try { const data = await fs.promises.readFile(filePath); return { data: Array.from(data) }; }
+  try { const data = await fs.promises.readFile(expandHomeDir(filePath)); return { data: Array.from(data) }; }
   catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('write-file-buffer', async (_, filePath: string, uint8: number[]) => {
-  try { await fs.promises.writeFile(filePath, Buffer.from(uint8)); return { success: true }; }
+  try { await fs.promises.writeFile(expandHomeDir(filePath), Buffer.from(uint8)); return { success: true }; }
   catch (e) { return { error: (e as Error).message }; }
 });
 ipcMain.handle('getFileStats', async (_, filePath: string) => {
-  try { const s = fs.statSync(filePath); return { size: s.size, modified: s.mtime.toISOString(), isDirectory: s.isDirectory() }; }
+  try { const s = fs.statSync(expandHomeDir(filePath)); return { size: s.size, modified: s.mtime.toISOString(), isDirectory: s.isDirectory() }; }
   catch (e) { return { error: (e as Error).message }; }
 });
-ipcMain.handle('file-exists', async (_, filePath: string) => { try { return fs.existsSync(filePath); } catch { return false; } });
-ipcMain.handle('delete-file', async (_, filePath: string) => { try { fs.unlinkSync(filePath); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
-ipcMain.handle('copy-file', async (_, src: string, dest: string) => { try { fs.copyFileSync(src, dest); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
-ipcMain.handle('renameFile', async (_, oldPath: string, newPath: string) => { try { fs.renameSync(oldPath, newPath); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
+ipcMain.handle('file-exists', async (_, filePath: string) => { try { return fs.existsSync(expandHomeDir(filePath)); } catch { return false; } });
+ipcMain.handle('delete-file', async (_, filePath: string) => { try { fs.unlinkSync(expandHomeDir(filePath)); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
+ipcMain.handle('copy-file', async (_, src: string, dest: string) => { try { fs.copyFileSync(expandHomeDir(src), expandHomeDir(dest)); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
+ipcMain.handle('renameFile', async (_, oldPath: string, newPath: string) => { try { fs.renameSync(expandHomeDir(oldPath), expandHomeDir(newPath)); return { success: true }; } catch (e) { return { error: (e as Error).message }; } });
 ipcMain.handle('open-in-native-explorer', async (_, filePath: string) => {
   const { shell } = require('electron');
-  shell.showItemInFolder(filePath); return { success: true };
+  shell.showItemInFolder(expandHomeDir(filePath)); return { success: true };
+});
+
+ipcMain.handle('getAvailableImageModels', async (_, currentPath) => {
+  if (!currentPath) return { models: [], error: 'Current path is required to fetch image models.' };
+  try {
+    const url = `${BACKEND_URL}/api/image_models?currentPath=${encodeURIComponent(currentPath)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error ${response.status}: ${errorText}`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data.models)) data.models = [];
+    return data;
+  } catch (err) {
+    return { models: [], error: (err as Error).message || 'Failed to fetch image models from backend' };
+  }
 });
 
 // Image generation IPC — proxy to the shared backend exactly like incognide does
@@ -220,9 +357,10 @@ ipcMain.handle('generate_images', async (_, { prompt, n, model, provider, attach
 ipcMain.handle('save-generated-image', async (_, blob: any, folderPath: string, filename: string) => {
   try {
     const data = Buffer.from(blob, 'base64');
-    await fs.promises.mkdir(folderPath, { recursive: true });
-    await fs.promises.writeFile(path.join(folderPath, filename), data);
-    return { success: true, path: path.join(folderPath, filename) };
+    const dir = expandHomeDir(folderPath);
+    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.writeFile(path.join(dir, filename), data);
+    return { success: true, path: path.join(dir, filename) };
   } catch (e) { return { error: (e as Error).message }; }
 });
 
