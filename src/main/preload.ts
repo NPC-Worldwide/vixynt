@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 export interface IElectronAPI {
   readDirectory: (dirPath: string) => Promise<any>;
@@ -23,7 +23,22 @@ export interface IElectronAPI {
   fineTuneDiffusers: (params: any) => Promise<any>;
   getFineTuneStatus: (jobId: string) => Promise<any>;
   getAvailableImageModels: (currentPath: string) => Promise<any>;
+  windowControls: {
+    minimize: () => void;
+    maximize: () => void;
+    close: () => void;
+  };
+  windowState: {
+    isMaximized: () => Promise<boolean>;
+  };
+  onWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => () => void;
 }
+
+const windowStateCallbacks: Array<(state: { isMaximized: boolean }) => void> = [];
+
+ipcRenderer.on('window-state-changed', (_event: IpcRendererEvent, state: { isMaximized: boolean }) => {
+  windowStateCallbacks.forEach(cb => cb(state));
+});
 
 contextBridge.exposeInMainWorld('api', {
   readDirectory: (dirPath: string) => ipcRenderer.invoke('readDirectory', dirPath),
@@ -49,6 +64,21 @@ contextBridge.exposeInMainWorld('api', {
   fineTuneDiffusers: (params: any) => ipcRenderer.invoke('finetune-diffusers', params),
   getFineTuneStatus: (jobId: string) => ipcRenderer.invoke('get-finetune-status', jobId),
   getAvailableImageModels: (currentPath: string) => ipcRenderer.invoke('getAvailableImageModels', currentPath),
+  windowControls: {
+    minimize: () => ipcRenderer.send('window-minimize'),
+    maximize: () => ipcRenderer.send('window-maximize'),
+    close: () => ipcRenderer.send('window-close'),
+  },
+  windowState: {
+    isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  },
+  onWindowStateChange: (callback: (state: { isMaximized: boolean }) => void) => {
+    windowStateCallbacks.push(callback);
+    return () => {
+      const idx = windowStateCallbacks.indexOf(callback);
+      if (idx !== -1) windowStateCallbacks.splice(idx, 1);
+    };
+  },
 } as IElectronAPI);
 
 declare global {

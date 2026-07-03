@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import PhotoViewer from './components/PhotoViewer';
+import TitleBar from './components/TitleBar';
 import { AiFeatureProvider } from './components/AiFeatureContext';
 import { getHomeDir } from './lib/utils';
 
@@ -14,10 +15,13 @@ export default function App() {
     );
   }
   return (
-    <div className="h-screen w-screen theme-bg-primary overflow-hidden flex">
-      <AiFeatureProvider>
-        <PhotoViewer currentPath={currentPath} />
-      </AiFeatureProvider>
+    <div className="h-screen w-screen theme-bg-primary overflow-hidden flex flex-col">
+      <TitleBar />
+      <div className="flex-1 flex overflow-hidden">
+        <AiFeatureProvider>
+          <PhotoViewer currentPath={currentPath} />
+        </AiFeatureProvider>
+      </div>
     </div>
   );
 }

@@ -107,10 +107,36 @@ async function startBackend() {
 
 app.on('before-quit', () => killBackendProcess());
 
+// Window control IPC handlers
+let mainWindow: BrowserWindow | null = null;
+
+ipcMain.on('window-minimize', () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.on('window-maximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+});
+
+ipcMain.on('window-close', () => {
+  mainWindow?.close();
+});
+
+ipcMain.handle('window-is-maximized', () => {
+  return mainWindow?.isMaximized() ?? false;
+});
+
 function createWindow() {
+  const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 900, minHeight: 600,
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? { trafficLightPosition: { x: 12, y: 8 } } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true, nodeIntegration: false,
@@ -118,6 +144,16 @@ function createWindow() {
       allowRunningInsecureContent: true,
     },
   });
+  mainWindow = win;
+
+  // Track maximize state changes
+  win.on('maximize', () => {
+    win.webContents.send('window-state-changed', { isMaximized: true });
+  });
+  win.on('unmaximize', () => {
+    win.webContents.send('window-state-changed', { isMaximized: false });
+  });
+
   if (IS_DEV) { win.loadURL('http://localhost:7340'); win.webContents.openDevTools(); }
   else { win.loadFile(path.join(__dirname, '../dist/index.html')); }
 }

@@ -1301,7 +1301,7 @@ useEffect(() => {
 
   const isMac = navigator.platform.startsWith('Mac');
   const renderSidebar = () => (
-    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200 ${isMac ? 'pt-8' : ''}`}>
+    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200 `}>
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         className="p-2 border-b theme-border hover:bg-white/5 transition-colors flex items-center justify-center"
@@ -5734,7 +5734,7 @@ return (
     <div className="flex-1 flex overflow-hidden">
       {renderSidebar()}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className={`flex-shrink-0 px-2 py-1 ${isMac && sidebarCollapsed ? 'pl-16' : ''}`}>
+        <div className={`flex-shrink-0 px-2 py-1 `}>
           <div className="relative group inline-block">
             <button className="flex items-center gap-2 px-3 py-1.5 theme-bg-secondary theme-hover rounded-lg border theme-border text-sm">
               <CurrentIcon size={16} className="text-blue-400"/>
