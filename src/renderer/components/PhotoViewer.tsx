@@ -1,6 +1,6 @@
 import { getFileName, generateId } from './utils';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useAiEnabled } from './AiFeatureContext';
+import { useSettings } from './SettingsContext';
 import {
     X, Loader, Image as ImageIcon, Folder,
     Camera, Wand2, Sliders, Grid, Upload, Trash2, Edit,
@@ -65,8 +65,8 @@ const readJSONFile = (file) => new Promise((resolve, reject) => {
   reader.readAsText(file);
 });
 
-const PhotoViewer = ({ currentPath, onStartConversation }: { currentPath: string; onStartConversation?: (images: any[]) => void }) => {
-    const aiEnabled = useAiEnabled();
+const PhotoViewer = ({ currentPath }: { currentPath: string }) => {
+    const { settings, aiEnabled, updateSettings, addTrackedFolder, removeTrackedFolder, updateTrackedFolder } = useSettings();
     const [activeTab, _setActiveTab] = useState(() => localStorage.getItem('vixynt_activeTab') || 'gallery');
     const setActiveTab = useCallback((tab: string) => {
         _setActiveTab(tab);
@@ -76,10 +76,10 @@ const PhotoViewer = ({ currentPath, onStartConversation }: { currentPath: string
     const [error, setError] = useState(null);
 
     console.log(currentPath);
-    const [projectPath, setProjectPath] = useState(currentPath || '~/.npcsh/images');
+    const [projectPath, setProjectPath] = useState(currentPath || '');
     const [isEditingPath, setIsEditingPath] = useState(false);
     const [imageSources, setImageSources] = useState([]);
-      const [activeSourceId, setActiveSourceId] = useState('project-images');
+    const [activeSourceId, setActiveSourceId] = useState('');
 
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedProvider, setSelectedProvider] = useState('');
@@ -124,6 +124,7 @@ const [selectedTextId, setSelectedTextId] = useState(null);
     const [videoTextLayers, setVideoTextLayers] = useState([]);
     const [selectedVideoTextId, setSelectedVideoTextId] = useState(null);
     const [addingVideoText, setAddingVideoText] = useState(false);
+    const [videoPanelCollapsed, setVideoPanelCollapsed] = useState('');
     const videoPreviewRef = useRef(null);
     const timelineRef = useRef(null);
 
@@ -312,7 +313,7 @@ const handleStartFineTune = async () => {
 
     const modelsOutputPath = `${currentPath}/models`;
 
-    const finalOutputPath = '~/.npcsh/models';
+    const finalOutputPath = settings.defaultModelOutputDir || `${currentPath}/models`;
 
     const config = {
         images: imagePaths,
@@ -652,11 +653,12 @@ const renderFineTuneModal = () => {
   }, []);
     useEffect(() => {
         const loadAllData = async () => {
-            const initialSources = [
-                { id: 'project-images', name: 'Project Images', path: currentPath, icon: Folder },
-                { id: 'global-images', name: 'Global Images', path: '~/.npcsh/images', icon: ImageIcon },
-                { id: 'screenshots', name: 'Screenshots', path: '~/.npcsh/screenshots', icon: Camera },
-            ];
+            const initialSources = settings.trackedFolders.map(f => ({
+                id: f.id,
+                name: f.name,
+                path: f.path,
+                icon: Folder,
+            }));
 
             setLoading(true);
             setError(null);
@@ -677,27 +679,20 @@ const renderFineTuneModal = () => {
                 );
                 setImageSources(updatedSources);
 
-                const projectSource = updatedSources.find(s => s.id === 'project-images');
-                const projectHasImages = projectSource?.images?.length > 0;
-
-                if (projectHasImages) {
-                    setActiveSourceId('project-images');
-                } else {
-                    setActiveSourceId('global-images');
+                if (updatedSources.length > 0 && !activeSourceId) {
+                    const firstWithImages = updatedSources.find(s => s.images?.length > 0);
+                    setActiveSourceId(firstWithImages?.id || updatedSources[0].id);
                 }
-
             } catch (err) {
                 setError('Failed to load image sources: ' + err.message);
             } finally {
                 setLoading(false);
             }
 
-            {
+            if (aiEnabled) {
               try {
-                // Fall back to '~' so image models load even when no project folder is open.
                 const imageModelsResponse = await window.api.getAvailableImageModels(currentPath || '~');
                 if (imageModelsResponse?.models && imageModelsResponse.models.length > 0) {
-
                   setAvailableModels(imageModelsResponse.models);
 
                   const fineTunedDiffusersModel = imageModelsResponse.models.find(
@@ -715,21 +710,19 @@ const renderFineTuneModal = () => {
                     setSelectedModel(standardDiffusersModel.value);
                     setSelectedProvider('diffusers');
                   } else if (imageModelsResponse.models.length > 0) {
-
                     setSelectedModel(imageModelsResponse.models[0].value);
                     setSelectedProvider(imageModelsResponse.models[0].provider);
                   }
                 }
               } catch (error) {
                 console.error('Error loading image models:', error);
-
-                setSelectedProvider('diffusers');
+                if (aiEnabled) setSelectedProvider('diffusers');
               }
             }
         };
 
         loadAllData();
-    }, [currentPath, projectPath]);
+    }, [currentPath, settings.trackedFolders]);
 
 const [selectedGeneratedImage, setSelectedGeneratedImage] = useState(null);
 const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1041,7 +1034,7 @@ const commitLayerParams = () => { pushHistory({ layers, selectedLayerId, adjustm
         });
 
     const brightness = 100 + combined.exposure + (combined.whites / 2.5) + (combined.shadows / -2.5);
-    const contrast = 100 + combined.contrast + (combined.pop / 2) + (combined.highlights / 2.5) - (combined.shadows / 2.5);
+    const contrast = 100 + combined.contrast + (combined.pop / 2) + (combined.highlights / 2.5) - (combined.shadows / 2.5) - (combined.blacks / 2.5);
     const saturate = combined.saturation + (combined.pop);
     const sepia = combined.warmth > 0 ? combined.warmth / 2 : 0;
     const hueRotate = combined.tint;
@@ -1288,20 +1281,36 @@ useEffect(() => {
     } catch (e) { setError('Batch metadata update failed'); }
   };
 
-  const handleUploadClick = () => fileInputRef.current?.click();
-
-  const handleUploadFiles = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+  const handleOpenFolderDialog = async () => {
     try {
-      await window.api?.saveUploadedFiles?.(files.map(f => ({ name: f.name, blob: f })), activeSource?.path);
-      await loadImagesForAllSources(imageSources);
-    } catch (err) { setError('Upload failed: ' + err.message); }
+      const result = await window.api?.showOpenDialog?.({
+        properties: ['openDirectory'],
+      });
+      const picked = Array.isArray(result)
+        ? (result[0]?.path || result[0])
+        : (result?.filePaths?.[0] || result?.filePath || result?.[0]);
+      if (picked) {
+        const name = picked.split('/').pop() || picked.split('\\').pop() || picked;
+        const id = `folder_${Date.now()}`;
+        addTrackedFolder({ id, name, path: picked });
+        setActiveSourceId(id);
+      }
+    } catch (e) {
+      console.error('Open folder failed:', e);
+    }
+  };
+
+  const handleRemoveTrackedFolder = (folderId: string) => {
+    removeTrackedFolder(folderId);
+    if (activeSourceId === folderId) {
+      const remaining = settings.trackedFolders.filter(f => f.id !== folderId);
+      setActiveSourceId(remaining[0]?.id || '');
+    }
   };
 
   const isMac = navigator.platform.startsWith('Mac');
   const renderSidebar = () => (
-    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200 `}>
+    <div className={`${sidebarCollapsed ? 'w-12' : 'w-64'} border-r theme-border flex flex-col flex-shrink-0 theme-sidebar transition-all duration-200`}>
       <button
         onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         className="p-2 border-b theme-border hover:bg-white/5 transition-colors flex items-center justify-center"
@@ -1314,77 +1323,102 @@ useEffect(() => {
         <>
           <div className="p-3 border-b theme-border">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Sources</h4>
-              <button
-                onClick={handleRefreshImages}
-                disabled={isRefreshing}
-                className="p-1 theme-hover rounded-full transition-all disabled:opacity-50"
-                title="Refresh images"
-              >
-                {isRefreshing ? (
-                  <Loader size={14} className="animate-spin" />
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.44-4.5M22 12.5a10 10 0 0 1-18.44 4.5"/>
-                  </svg>
-                )}
-              </button>
+              <h4 className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Folders</h4>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={handleRefreshImages}
+                  disabled={isRefreshing}
+                  className="p-1 theme-hover rounded-full transition-all disabled:opacity-50"
+                  title="Refresh images"
+                >
+                  {isRefreshing ? (
+                    <Loader size={14} className="animate-spin" />
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.44-4.5M22 12.5a10 10 0 0 1-18.44 4.5"/>
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={handleOpenFolderDialog}
+                  className="p-1 theme-hover rounded-full transition-all"
+                  title="Add folder to track"
+                >
+                  <PlusCircle size={14} />
+                </button>
+              </div>
             </div>
             {imageSources.map(source => (
-              <button key={source.id} onClick={() => setActiveSourceId(source.id)}
-                className={`w-full text-left p-2 rounded text-sm mb-1 flex items-center gap-2 ${activeSourceId === source.id ? 'theme-button-primary' : 'theme-hover'}`}>
-                <source.icon size={14} /> <span>{source.name}</span>
-                <span className="ml-auto text-xs theme-text-muted">({source.images?.length || 0})</span>
-              </button>
+              <div key={source.id} className="group relative">
+                <button
+                  onClick={() => setActiveSourceId(source.id)}
+                  className={`w-full text-left p-2 rounded text-sm mb-1 flex items-center gap-2 pr-7 ${activeSourceId === source.id ? 'theme-button-primary' : 'theme-hover'}`}
+                >
+                  <Folder size={14} className="flex-shrink-0" />
+                  <span className="truncate">{source.name}</span>
+                  <span className="ml-auto text-xs theme-text-muted flex-shrink-0">({source.images?.length || 0})</span>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleRemoveTrackedFolder(source.id); }}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 theme-hover transition-opacity"
+                  title="Remove folder"
+                >
+                  <X size={12} />
+                </button>
+              </div>
             ))}
+            {imageSources.length === 0 && (
+              <div className="text-xs theme-text-muted text-center py-4">
+                No folders tracked.<br />
+                Click <PlusCircle size={10} className="inline" /> to add one.
+              </div>
+            )}
           </div>
 
           <div className="p-3 border-b theme-border">
             <h4 className="text-xs font-semibold theme-text-secondary uppercase tracking-wider mb-2">View Options</h4>
             <div className="flex gap-1 mb-2">
               <button onClick={() => setViewMode('grid')}
-                className={`flex-1 p-2 rounded flex items-center justify-center gap-2 ${viewMode === 'grid' ? 'theme-button-primary' : 'theme-hover'}`}>
+                className={`flex-1 p-2 rounded flex items-center justify-center ${viewMode === 'grid' ? 'theme-button-primary' : 'theme-hover'}`}
+                title="Grid view">
                 <LayoutGrid size={14} /></button>
               <button onClick={() => setViewMode('list')}
-                className={`flex-1 p-2 rounded flex items-center justify-center gap-2 ${viewMode === 'list' ? 'theme-button-primary' : 'theme-button theme-hover'}`}>
+                className={`flex-1 p-2 rounded flex items-center justify-center ${viewMode === 'list' ? 'theme-button-primary' : 'theme-hover'}`}
+                title="List view">
                 <List size={14} /></button>
             </div>
-            <div className="relative"><Search size={14} className="absolute left-2.5 top-2.5 theme-text-muted" />
+            <div className="relative mb-2">
               <input type="text" placeholder="Filter by name..." value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)} className="w-full pl-8 theme-input text-sm rounded" /></div>
-            <div className="relative mt-2"><Search size={14} className="absolute left-2.5 top-2.5 theme-text-muted" />
-              <input type="text" placeholder="Filter by metadata (keyword)…" value={metaSearch}
-                onChange={e => setMetaSearch(e.target.value)} className="w-full pl-8 theme-input text-sm rounded" /></div>
+                onChange={e => setSearchTerm(e.target.value)} className="w-full pl-2.5 pr-7 theme-input text-sm rounded" />
+              <Search size={14} className="absolute right-2 top-2 theme-text-muted pointer-events-none" />
+            </div>
+            <div className="relative">
+              <input type="text" placeholder="Filter by metadata..." value={metaSearch}
+                onChange={e => setMetaSearch(e.target.value)} className="w-full pl-2.5 pr-7 theme-input text-sm rounded" />
+              <Search size={14} className="absolute right-2 top-2 theme-text-muted pointer-events-none" />
+            </div>
           </div>
+
           <div className="p-3 flex-1 overflow-y-auto">
             {selectedImageGroup.size > 0 && (
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Batch Actions</h4>
-                <button
-                    className="w-full theme-button flex items-center gap-2
-                        justify-center text-sm py-2 rounded"
-                    onClick={() => setShowFineTuneModal(true)}
-                >
-                    <Wand2 size={14} /> Fine-tune Model
-                </button>
-
+                <h4 className="text-xs font-semibold theme-text-secondary uppercase tracking-wider">Selected ({selectedImageGroup.size})</h4>
                 <button className="w-full theme-button flex items-center gap-2 justify-center text-sm py-2 rounded"
-                  onClick={applyMetadataToSelection}><Save size={14} /> Apply Metadata</button>
-                <button className="w-full theme-button flex items-center gap-2 justify-center text-sm py-2 rounded"
-                  onClick={() => setActiveTab('labeling')}><Tag size={14} /> Label Selected</button>
-                <button className="w-full theme-button flex items-center gap-2 justify-center text-sm py-2 rounded"
-                  onClick={handleDeleteSelected}><Trash2 size={14} /> Delete ({selectedImageGroup.size})</button>
+                  onClick={handleDeleteSelected}><Trash2 size={14} /> Delete Selected</button>
               </div>
             )}
           </div>
-          <div className="p-3 border-t theme-border">
-            <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleUploadFiles} />
-            <button className="w-full theme-button-primary flex items-center justify-center gap-2 text-sm py-2 rounded"
-              onClick={handleUploadClick}><Upload size={16} /> Upload Image</button>
+
+          <div className="p-3 border-t theme-border space-y-1">
+            <button
+              onClick={() => setActiveTab('settings')}
+              className="w-full theme-button flex items-center gap-2 text-sm py-2 rounded justify-center"
+            >
+              <Sliders size={14} /> Settings
+            </button>
           </div>
         </>
       ) : (
-        /* Collapsed sidebar - icon-only buttons */
         <div className="flex flex-col items-center py-2 space-y-2">
           {imageSources.map(source => (
             <button
@@ -1393,9 +1427,16 @@ useEffect(() => {
               className={`p-2 rounded ${activeSourceId === source.id ? 'theme-button-primary' : 'theme-hover'}`}
               title={source.name}
             >
-              <source.icon size={16} />
+              <Folder size={16} />
             </button>
           ))}
+          <button
+            onClick={handleOpenFolderDialog}
+            className="p-2 rounded theme-hover"
+            title="Add folder"
+          >
+            <PlusCircle size={16} />
+          </button>
           <div className="border-t theme-border w-6 my-2" />
           <button
             onClick={() => setViewMode('grid')}
@@ -1413,11 +1454,11 @@ useEffect(() => {
           </button>
           <div className="flex-1" />
           <button
-            onClick={handleUploadClick}
-            className="p-2 rounded theme-button-primary"
-            title="Upload Image"
+            onClick={() => setActiveTab('settings')}
+            className="p-2 rounded theme-hover"
+            title="Settings"
           >
-            <Upload size={16} />
+            <Sliders size={16} />
           </button>
         </div>
       )}
@@ -1867,26 +1908,23 @@ const renderGallery = () => (
                 style={{ top: contextMenu.y, left: contextMenu.x }}
             >
                 <button
-                    onClick={handleSendToLLM}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm"
-                >
-                    <MessageSquare size={14} />
-                    <span>Send to LLM</span>
-                </button>
-                <button
                     onClick={() => { setActiveTab('editor'); setContextMenu({ visible: false }); setLightboxIndex(null); }}
                     className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm"
                 >
                     <Edit size={14} />
                     <span>Edit Image</span>
                 </button>
-                <button
-                    onClick={handleUseForGeneration}
-                    className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm"
-                >
-                    <Sparkles size={14} />
-                    <span>Use for Generation</span>
-                </button>
+                {aiEnabled && (
+                    <>
+                        <button
+                            onClick={handleUseForGeneration}
+                            className="flex items-center gap-2 px-4 py-2 theme-hover w-full text-left theme-text-primary text-sm"
+                        >
+                            <Sparkles size={14} />
+                            <span>Use for Generation</span>
+                        </button>
+                    </>
+                )}
                 <hr className="my-1 theme-border" />
                 <button
                     onClick={handleRenameStart}
@@ -2552,7 +2590,7 @@ const executeWorkflow = useCallback(async () => {
             updateWorkflowNode(id, { _status: s, _statusMsg: msg });
         };
         const cleanPath = (p: string) => (p ? p.replace(/^media:\/\//, '') : '');
-        const outputDir = currentPath || '~/.npcsh/images';
+        const outputDir = settings.defaultImageOutputDir || currentPath || '~/Pictures';
 
         // Seed source + generate nodes
         for (const node of workflowNodes) {
@@ -2660,15 +2698,21 @@ const executeWorkflow = useCallback(async () => {
     } finally {
         setWorkflowExecuting(false);
     }
-}, [workflowNodes, workflowConnections, currentPath, selectedModel, selectedProvider, availableModels]);
+}, [workflowNodes, workflowConnections, currentPath, selectedModel, selectedProvider, availableModels, settings.defaultImageOutputDir]);
 
 const renderWorkflow = useCallback(() => {
+    const visibleNodeTypes = aiEnabled
+        ? WORKFLOW_NODE_TYPES
+        : Object.fromEntries(
+            Object.entries(WORKFLOW_NODE_TYPES).filter(([type]) => !['generate', 'fill'].includes(type))
+        );
+
     return (
         <div className="flex-1 flex overflow-hidden">
             <div className="w-56 border-r theme-border p-3 flex flex-col gap-3 overflow-y-auto theme-bg-secondary">
                 <h3 className="text-sm font-semibold text-white mb-2">Add Nodes</h3>
                 <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(WORKFLOW_NODE_TYPES).map(([type, config]) => (
+                    {Object.entries(visibleNodeTypes).map(([type, config]) => (
                         <button
                             key={type}
                             onClick={() => addWorkflowNode(type, 200 + Math.random() * 200, 100 + Math.random() * 200)}
@@ -4050,11 +4094,19 @@ const renderVideoEditor = useCallback(() => {
             </div>
 
             <div className="flex-1 flex overflow-hidden">
-                <div className="w-56 border-r theme-border flex flex-col overflow-hidden theme-bg-secondary">
-                    <div className="p-2 border-b theme-border">
+                <div className={`${videoPanelCollapsed === 'media' ? 'w-0 overflow-hidden' : 'w-48'} border-r theme-border flex flex-col overflow-hidden theme-bg-secondary transition-all duration-200`}>
+                    <div className="p-2 border-b theme-border flex items-center justify-between">
                         <h4 className="text-xs font-semibold text-gray-400 uppercase">Media</h4>
+                        <button
+                            onClick={() => setVideoPanelCollapsed(videoPanelCollapsed === 'media' ? '' : 'media')}
+                            className="p-0.5 hover:bg-gray-700 rounded"
+                            title={videoPanelCollapsed === 'media' ? 'Show media panel' : 'Hide media panel'}
+                        >
+                            {videoPanelCollapsed === 'media' ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+                        </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {videoPanelCollapsed !== 'media' && (
+                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
                         {videoClips.filter(c => !c.trackId).map(clip => (
                             <div
                                 key={clip.id}
@@ -4093,6 +4145,7 @@ const renderVideoEditor = useCallback(() => {
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
 
                 <div className="flex-1 flex flex-col">
@@ -4231,10 +4284,18 @@ const renderVideoEditor = useCallback(() => {
                     </div>
                 </div>
 
-                <div className="w-64 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
-                    <div className="p-2 border-b theme-border">
+                <div className={`${videoPanelCollapsed === 'inspector' ? 'w-0 overflow-hidden' : 'w-64'} border-l theme-border flex flex-col overflow-hidden theme-bg-secondary transition-all duration-200`}>
+                    <div className="p-2 border-b theme-border flex items-center justify-between">
                         <h4 className="text-xs font-semibold text-gray-400 uppercase">Inspector</h4>
+                        <button
+                            onClick={() => setVideoPanelCollapsed(videoPanelCollapsed === 'inspector' ? '' : 'inspector')}
+                            className="p-0.5 hover:bg-gray-700 rounded"
+                            title={videoPanelCollapsed === 'inspector' ? 'Show inspector' : 'Hide inspector'}
+                        >
+                            {videoPanelCollapsed === 'inspector' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                        </button>
                     </div>
+                    {videoPanelCollapsed !== 'inspector' && (
                     <div className="flex-1 overflow-y-auto p-3">
                         {selectedClipId ? (() => {
                             const clip = videoClips.find(c => c.id === selectedClipId);
@@ -4531,6 +4592,7 @@ const renderVideoEditor = useCallback(() => {
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
             </div>
 
@@ -5140,14 +5202,14 @@ const renderDarkRoom = () => {
             </div>
             <ImageEditor
                 imageSrc={selectedImage}
-                onGenerativeFill={handleGenerativeFill}
+                onGenerativeFill={aiEnabled ? handleGenerativeFill : undefined}
                 onSave={handleSaveProject}
                 showHeader={true}
                 title="DarkRoom"
                 className="flex-1"
-                fillModels={availableModels}
-                defaultFillModel={selectedModel}
-                defaultFillProvider={selectedProvider}
+                fillModels={aiEnabled ? availableModels : []}
+                defaultFillModel={aiEnabled ? selectedModel : ''}
+                defaultFillProvider={aiEnabled ? selectedProvider : ''}
             />
         </div>
     );
@@ -5712,6 +5774,146 @@ const renderDarkRoomLegacy = () => {
     );
 };
 
+const renderSettings = () => {
+    const handleAddDefaultFolder = async (label: string, defaultPath: string) => {
+        try {
+            const resolved = defaultPath.replace(/^~/, await window.api.getHomeDir());
+            const exists = await window.api?.fileExists?.(resolved);
+            if (exists) {
+                const id = `folder_${Date.now()}`;
+                addTrackedFolder({ id, name: label, path: resolved });
+            } else {
+                await window.api?.ensureDir?.(resolved);
+                const id = `folder_${Date.now()}`;
+                addTrackedFolder({ id, name: label, path: resolved });
+            }
+        } catch {}
+    };
+
+    const defaultFolders = [
+        { label: 'Pictures', path: '~/Pictures' },
+        { label: 'Photos', path: '~/Photos' },
+        { label: 'Movies', path: '~/Movies' },
+        { label: 'Videos', path: '~/Videos' },
+        { label: 'Desktop', path: '~/Desktop' },
+    ];
+
+    return (
+        <div className="flex-1 overflow-y-auto p-6 theme-bg-primary">
+            <div className="max-w-2xl mx-auto space-y-6">
+                <div>
+                    <h2 className="text-xl font-bold theme-text-primary mb-1">Settings</h2>
+                    <p className="text-sm theme-text-muted">Configure Vixynt to your liking.</p>
+                </div>
+
+                <div className="border rounded-lg p-4 theme-border space-y-3">
+                    <h3 className="text-sm font-semibold theme-text-primary">AI Features</h3>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <div className="relative">
+                            <input
+                                type="checkbox"
+                                checked={aiEnabled}
+                                onChange={(e) => updateSettings({ aiEnabled: e.target.checked })}
+                                className="sr-only peer"
+                            />
+                            <div className="w-10 h-5 bg-gray-600 rounded-full peer-checked:bg-blue-600 transition-colors"></div>
+                            <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                        </div>
+                        <span className="text-sm theme-text-primary">
+                            {aiEnabled ? 'AI features enabled' : 'AI features disabled'}
+                        </span>
+                    </label>
+                    {aiEnabled && (
+                        <p className="text-xs theme-text-muted ml-13">
+                            Image generation, video generation, and generative fill are visible.
+                        </p>
+                    )}
+                </div>
+
+                <div className="border rounded-lg p-4 theme-border space-y-3">
+                    <h3 className="text-sm font-semibold theme-text-primary">Tracked Folders</h3>
+                    <p className="text-xs theme-text-muted">Folders shown in the sidebar for quick image browsing.</p>
+
+                    {settings.trackedFolders.length > 0 && (
+                        <div className="space-y-1">
+                            {settings.trackedFolders.map(folder => (
+                                <div key={folder.id} className="flex items-center gap-2 p-2 rounded theme-bg-secondary">
+                                    <Folder size={14} className="theme-text-muted" />
+                                    <span className="text-sm flex-1 theme-text-primary truncate">{folder.name}</span>
+                                    <span className="text-xs theme-text-muted">{folder.path}</span>
+                                    <button
+                                        onClick={() => removeTrackedFolder(folder.id)}
+                                        className="p-1 hover:bg-red-600/20 rounded"
+                                        title="Remove"
+                                    >
+                                        <X size={12} className="text-red-400" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="pt-2 space-y-1">
+                        <p className="text-xs font-semibold theme-text-secondary uppercase">Quick-add common folders</p>
+                        <div className="flex flex-wrap gap-2">
+                            {defaultFolders.map(df => {
+                                const alreadyAdded = settings.trackedFolders.some(f => f.path.endsWith(df.label));
+                                return (
+                                    <button
+                                        key={df.path}
+                                        onClick={() => handleAddDefaultFolder(df.label, df.path)}
+                                        disabled={alreadyAdded}
+                                        className={`px-3 py-1.5 rounded text-xs flex items-center gap-1.5 transition-colors ${
+                                            alreadyAdded
+                                                ? 'theme-bg-secondary text-gray-500 cursor-not-allowed'
+                                                : 'theme-button hover:bg-blue-600/30'
+                                        }`}
+                                    >
+                                        <PlusCircle size={12} />
+                                        {df.label}
+                                        {alreadyAdded && <Check size={12} className="text-green-400" />}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleOpenFolderDialog}
+                        className="theme-button-primary flex items-center gap-2 px-3 py-2 rounded text-sm"
+                    >
+                        <FolderOpen size={14} /> Browse for folder...
+                    </button>
+                </div>
+
+                <div className="border rounded-lg p-4 theme-border space-y-3">
+                    <h3 className="text-sm font-semibold theme-text-primary">Output Paths</h3>
+                    <div>
+                        <label className="text-xs theme-text-secondary uppercase">Default image output</label>
+                        <input
+                            type="text"
+                            value={settings.defaultImageOutputDir}
+                            onChange={(e) => updateSettings({ defaultImageOutputDir: e.target.value })}
+                            placeholder="e.g. ~/Pictures/Vixynt"
+                            className="w-full theme-input text-sm mt-1"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-xs theme-text-secondary uppercase">Model output</label>
+                        <input
+                            type="text"
+                            value={settings.defaultModelOutputDir}
+                            onChange={(e) => updateSettings({ defaultModelOutputDir: e.target.value })}
+                            placeholder="e.g. ~/models"
+                            className="w-full theme-input text-sm mt-1"
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const VIXYNT_MODES = [
     { id: 'gallery', name: 'Gallery', icon: Grid, group: 'browse' },
     { id: 'generator', name: 'Image Generate', icon: Sparkles, group: 'create' },
@@ -5721,10 +5923,13 @@ const VIXYNT_MODES = [
     { id: 'video-editor', name: 'Video Editor', icon: Film, group: 'edit' },
     { id: 'datasets', name: 'Datasets', icon: Database, group: 'manage' },
     { id: 'metadata', name: 'Metadata', icon: Info, group: 'manage' },
-    { id: 'labeling', name: 'Labeling', icon: Tag, group: 'manage' }
+    { id: 'labeling', name: 'Labeling', icon: Tag, group: 'manage' },
+    { id: 'settings', name: 'Settings', icon: Sliders, group: 'manage' },
+    { id: 'anim-studio', name: 'Animation Studio', icon: Film, group: 'create' },
+    { id: 'game-engine', name: 'Game Engine', icon: Crop, group: 'create' }
 ];
 
-const AI_VIXYNT_MODE_IDS = ['generator', 'video-gen', 'workflow'];
+const AI_VIXYNT_MODE_IDS = ['generator', 'video-gen', 'anim-studio', 'game-engine'];
 const filteredModes = aiEnabled ? VIXYNT_MODES : VIXYNT_MODES.filter(m => !AI_VIXYNT_MODE_IDS.includes(m.id));
 const currentMode = filteredModes.find(m => m.id === activeTab) || filteredModes[0];
 const CurrentIcon = currentMode.icon;
@@ -5791,11 +5996,12 @@ return (
         {activeTab === 'editor' && renderDarkRoom()}
         {aiEnabled && activeTab === 'generator' && renderGenerator()}
         {aiEnabled && activeTab === 'video-gen' && renderVideoGenerator()}
-        {aiEnabled && activeTab === 'workflow' && renderWorkflow()}
+        {activeTab === 'workflow' && renderWorkflow()}
         {activeTab === 'video-editor' && renderVideoEditor()}
         {activeTab === 'datasets' && renderDatasetManager()}
         {activeTab === 'metadata' && renderMetadata()}
         {activeTab === 'labeling' && renderLabeling()}
+        {activeTab === 'settings' && renderSettings()}
         {aiEnabled && renderFineTuneModal()}
       </main>
     </div>

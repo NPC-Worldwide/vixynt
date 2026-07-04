@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import PhotoViewer from './components/PhotoViewer';
 import TitleBar from './components/TitleBar';
-import { AiFeatureProvider } from './components/AiFeatureContext';
+import { SettingsProvider } from './components/SettingsContext';
 import { getHomeDir } from './lib/utils';
 
 export default function App() {
@@ -18,9 +18,9 @@ export default function App() {
     <div className="h-screen w-screen theme-bg-primary overflow-hidden flex flex-col">
       <TitleBar />
       <div className="flex-1 flex overflow-hidden">
-        <AiFeatureProvider>
+        <SettingsProvider>
           <PhotoViewer currentPath={currentPath} />
-        </AiFeatureProvider>
+        </SettingsProvider>
       </div>
     </div>
   );
