@@ -55,6 +55,7 @@
       "package.json"
     ],
     "mac": {
+      "icon": "vixynt.png",
       "target": [
         {
           "target": "dmg",
@@ -66,9 +67,11 @@
       "category": "public.app-category.productivity"
     },
     "win": {
+      "icon": "vixynt.png",
       "target": "nsis"
     },
     "linux": {
+      "icon": "vixynt.png",
       "target": [
         "deb",
         "AppImage"
