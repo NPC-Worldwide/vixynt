@@ -23,6 +23,9 @@ import {
     ImageEditor
 } from 'npcts';
 
+import AnimationStudio from './AnimationStudio';
+import GameEngine from './GameEngine';
+
   const IMAGES_PER_PAGE = 24;
 
   const DARKROOM_LAYER_TYPES = {
@@ -3926,7 +3929,7 @@ const renderVideoEditor = useCallback(() => {
                                 const newClips = fileData.map((file, i) => {
                                     const clipId = `clip_${Date.now()}_${i}`;
                                     const isAudio = !!file.name.match(/\.(mp3|wav|aac|m4a|ogg|flac)$/i);
-                                    const fileSrc = `file://${file.path}`;
+                                    const fileSrc = `media://${file.path}`;
 
                                     const el = document.createElement(isAudio ? 'audio' : 'video');
                                     el.preload = 'metadata';
@@ -4074,37 +4077,125 @@ const renderVideoEditor = useCallback(() => {
                 </button>
             </div>
 
-            <div className="flex-1 flex overflow-hidden">
-                <div className={`${videoPanelCollapsed === 'media' ? 'w-0 overflow-hidden' : 'w-48'} border-r theme-border flex flex-col overflow-hidden theme-bg-secondary transition-all duration-200`}>
-                    <div className="p-2 border-b theme-border flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-gray-400 uppercase">Media</h4>
-                        <button
-                            onClick={() => setVideoPanelCollapsed(videoPanelCollapsed === 'media' ? '' : 'media')}
-                            className="p-0.5 hover:bg-gray-700 rounded"
-                            title={videoPanelCollapsed === 'media' ? 'Show media panel' : 'Hide media panel'}
-                        >
-                            {videoPanelCollapsed === 'media' ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-                        </button>
-                    </div>
-                    {videoPanelCollapsed !== 'media' && (
-                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                        {videoClips.filter(c => !c.trackId).map(clip => (
+            <div className="flex-1 flex flex-col">
+                <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50">
+                    {(() => {
+                        const timelineClips = videoClips.filter(c => c.trackId?.startsWith('video'));
+                        const currentClip = timelineClips.find(c => c.x <= videoCurrentTime && (c.x + c.duration) > videoCurrentTime);
+                        const videoSrc = currentClip?.src || (timelineClips[0]?.src || '');
+
+                        return (
+                            <div className="relative w-full max-w-full h-full">
+                                <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-2xl relative max-h-full mx-auto" style={{ maxWidth: '90%' }}>
+                                    {videoSrc ? (
+                                        <video
+                                            ref={videoPreviewRef}
+                                            src={videoSrc}
+                                            className="w-full h-full object-contain"
+                                            onTimeUpdate={(e) => setVideoCurrentTime((e.target as HTMLVideoElement).currentTime)}
+                                            onLoadedMetadata={(e) => {
+                                                const video = e.target as HTMLVideoElement;
+                                                if (currentClip) {
+                                                    setVideoClips(prev => prev.map(c => c.id === currentClip.id ? {...c, duration: video.duration} : c));
+                                                }
+                                                setVideoDuration(Math.max(videoDuration, video.duration));
+                                            }}
+                                            onEnded={() => setVideoPlaying(false)}
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center">
+                                            <div className="text-center">
+                                                <Film size={48} className="mx-auto text-gray-700 mb-2"/>
+                                                <p className="text-gray-600 text-sm">Add clips to timeline</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {videoTextLayers.filter(t =>
+                                        videoCurrentTime >= t.startTime && videoCurrentTime <= (t.startTime + t.duration)
+                                    ).map(text => (
+                                        <div
+                                            key={text.id}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedVideoTextId(text.id);
+                                                setSelectedClipId(null);
+                                                setSelectedTransitionId(null);
+                                            }}
+                                            className={`absolute cursor-move ${selectedVideoTextId === text.id ? 'ring-2 ring-yellow-400' : ''}`}
+                                            style={{
+                                                left: `${text.x}%`,
+                                                top: `${text.y}%`,
+                                                transform: 'translate(-50%, -50%)',
+                                                fontSize: `${text.fontSize}px`,
+                                                color: text.color,
+                                                fontFamily: text.fontFamily,
+                                                fontWeight: text.bold ? 'bold' : 'normal',
+                                                fontStyle: text.italic ? 'italic' : 'normal',
+                                                textAlign: text.align,
+                                                textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                                                padding: text.hasBackground ? '8px 16px' : '0',
+                                                background: text.hasBackground ? text.backgroundColor : 'transparent',
+                                                borderRadius: text.hasBackground ? '4px' : '0',
+                                                whiteSpace: 'pre-wrap',
+                                                zIndex: 10
+                                            }}
+                                            onMouseDown={(e) => {
+                                                e.stopPropagation();
+                                                const startX = e.clientX;
+                                                const startY = e.clientY;
+                                                const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                                                if (!rect) return;
+
+                                                const handleMove = (moveE: MouseEvent) => {
+                                                    const deltaX = ((moveE.clientX - startX) / rect.width) * 100;
+                                                    const deltaY = ((moveE.clientY - startY) / rect.height) * 100;
+                                                    setVideoTextLayers(prev => prev.map(t =>
+                                                        t.id === text.id
+                                                            ? {...t, x: Math.max(0, Math.min(100, text.x + deltaX)), y: Math.max(0, Math.min(100, text.y + deltaY))}
+                                                            : t
+                                                    ));
+                                                };
+
+                                                const handleUp = () => {
+                                                    document.removeEventListener('mousemove', handleMove);
+                                                    document.removeEventListener('mouseup', handleUp);
+                                                };
+
+                                                document.addEventListener('mousemove', handleMove);
+                                                document.addEventListener('mouseup', handleUp);
+                                            }}
+                                        >
+                                            {text.content}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </div>
+
+                <div className="h-20 border-t theme-border flex items-center overflow-x-auto bg-gray-800/60 px-2 gap-2">
+                    {videoClips.filter(c => !c.trackId).length === 0 ? (
+                        <div className="w-full text-center text-gray-500 text-xs">
+                            Import media to add to the timeline
+                        </div>
+                    ) : (
+                        videoClips.filter(c => !c.trackId).map(clip => (
                             <div
                                 key={clip.id}
                                 draggable
                                 onDragStart={(e) => e.dataTransfer.setData('clipId', clip.id)}
                                 onClick={() => setSelectedClipId(clip.id)}
-                                className={`p-2 rounded cursor-move flex items-center gap-2 group ${
+                                className={`flex-shrink-0 w-20 h-16 rounded cursor-move flex flex-col items-center justify-center gap-1 group ${
                                     selectedClipId === clip.id ? 'bg-blue-600/40 ring-1 ring-blue-500' : 'bg-gray-700/30 hover:bg-gray-700/50'
                                 }`}
                             >
-                                <div className={`w-8 h-8 rounded flex items-center justify-center ${clip.type === 'video' ? 'bg-blue-600/30' : 'bg-green-600/30'}`}>
-                                    {clip.type === 'video' ? <Film size={14} className="text-blue-400"/> : <Music size={14} className="text-green-400"/>}
+                                <div className={`w-7 h-7 rounded flex items-center justify-center ${clip.type === 'video' ? 'bg-blue-600/30' : 'bg-green-600/30'}`}>
+                                    {clip.type === 'video' ? <Film size={12} className="text-blue-400"/> : <Music size={12} className="text-green-400"/>}
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs truncate">{clip.name}</p>
-                                    <p className="text-xs text-gray-500">{formatTimeShort(clip.duration || 0)}</p>
-                                </div>
+                                <p className="text-xs truncate w-full px-1 text-center">{clip.name}</p>
+                                <p className="text-xs text-gray-500">{formatTimeShort(clip.duration || 0)}</p>
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -4113,467 +4204,50 @@ const renderVideoEditor = useCallback(() => {
                                         const insertX = lastClipOnTrack ? lastClipOnTrack.x + lastClipOnTrack.duration : 0;
                                         setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, trackId, x: insertX} : c));
                                     }}
-                                    className="p-1 opacity-0 group-hover:opacity-100 hover:bg-blue-500/50 rounded transition-opacity"
+                                    className="p-0.5 opacity-0 group-hover:opacity-100 hover:bg-blue-500/50 rounded transition-opacity"
                                 >
-                                    <Plus size={12}/>
+                                    <Plus size={10}/>
                                 </button>
                             </div>
-                        ))}
-                        {videoClips.filter(c => !c.trackId).length === 0 && (
-                            <div className="text-center py-8 text-gray-600">
-                                <Film size={24} className="mx-auto mb-2 opacity-50"/>
-                                <p className="text-xs">Drop media here</p>
-                            </div>
-                        )}
-                    </div>
+                        ))
                     )}
                 </div>
 
-                <div className="flex-1 flex flex-col">
-                    <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50">
-                        {(() => {
-                            const timelineClips = videoClips.filter(c => c.trackId?.startsWith('video'));
-                            const currentClip = timelineClips.find(c => c.x <= videoCurrentTime && (c.x + c.duration) > videoCurrentTime);
-                            const videoSrc = currentClip?.src || (timelineClips[0]?.src || '');
-
-                            return (
-                                <div className="relative w-full max-w-4xl">
-                                    <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-2xl relative">
-                                        {videoSrc ? (
-                                            <video
-                                                ref={videoPreviewRef}
-                                                src={videoSrc}
-                                                className="w-full h-full object-contain"
-                                                onTimeUpdate={(e) => setVideoCurrentTime((e.target as HTMLVideoElement).currentTime)}
-                                                onLoadedMetadata={(e) => {
-                                                    const video = e.target as HTMLVideoElement;
-                                                    if (currentClip) {
-                                                        setVideoClips(prev => prev.map(c => c.id === currentClip.id ? {...c, duration: video.duration} : c));
-                                                    }
-                                                    setVideoDuration(Math.max(videoDuration, video.duration));
-                                                }}
-                                                onEnded={() => setVideoPlaying(false)}
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center">
-                                                <div className="text-center">
-                                                    <Film size={48} className="mx-auto text-gray-700 mb-2"/>
-                                                    <p className="text-gray-600 text-sm">Add clips to timeline</p>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {videoTextLayers.filter(t =>
-                                            videoCurrentTime >= t.startTime && videoCurrentTime <= (t.startTime + t.duration)
-                                        ).map(text => (
-                                            <div
-                                                key={text.id}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setSelectedVideoTextId(text.id);
-                                                    setSelectedClipId(null);
-                                                    setSelectedTransitionId(null);
-                                                }}
-                                                className={`absolute cursor-move ${selectedVideoTextId === text.id ? 'ring-2 ring-yellow-400' : ''}`}
-                                                style={{
-                                                    left: `${text.x}%`,
-                                                    top: `${text.y}%`,
-                                                    transform: 'translate(-50%, -50%)',
-                                                    fontSize: `${text.fontSize}px`,
-                                                    color: text.color,
-                                                    fontFamily: text.fontFamily,
-                                                    fontWeight: text.bold ? 'bold' : 'normal',
-                                                    fontStyle: text.italic ? 'italic' : 'normal',
-                                                    textAlign: text.align,
-                                                    textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
-                                                    padding: text.hasBackground ? '8px 16px' : '0',
-                                                    background: text.hasBackground ? text.backgroundColor : 'transparent',
-                                                    borderRadius: text.hasBackground ? '4px' : '0',
-                                                    whiteSpace: 'pre-wrap',
-                                                    zIndex: 10
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    e.stopPropagation();
-                                                    const startX = e.clientX;
-                                                    const startY = e.clientY;
-                                                    const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-                                                    if (!rect) return;
-
-                                                    const handleMove = (moveE: MouseEvent) => {
-                                                        const deltaX = ((moveE.clientX - startX) / rect.width) * 100;
-                                                        const deltaY = ((moveE.clientY - startY) / rect.height) * 100;
-                                                        setVideoTextLayers(prev => prev.map(t =>
-                                                            t.id === text.id
-                                                                ? {...t, x: Math.max(0, Math.min(100, text.x + deltaX)), y: Math.max(0, Math.min(100, text.y + deltaY))}
-                                                                : t
-                                                        ));
-                                                    };
-
-                                                    const handleUp = () => {
-                                                        document.removeEventListener('mousemove', handleMove);
-                                                        document.removeEventListener('mouseup', handleUp);
-                                                    };
-
-                                                    document.addEventListener('mousemove', handleMove);
-                                                    document.addEventListener('mouseup', handleUp);
-                                                }}
-                                            >
-                                                {text.content}
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })()}
+                <div className="h-14 border-t theme-border flex items-center justify-center gap-3 bg-gray-800/50">
+                    <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime = 0; setVideoCurrentTime(0); }} className="p-2 hover:bg-gray-700 rounded">
+                        <SkipBack size={18}/>
+                    </button>
+                    <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime -= 5; }} className="p-2 hover:bg-gray-700 rounded">
+                        <Rewind size={18}/>
+                    </button>
+                    <button
+                        onClick={() => {
+                            const video = videoPreviewRef.current;
+                            if (video) {
+                                if (videoPlaying) video.pause();
+                                else video.play().catch(() => {});
+                            }
+                            setVideoPlaying(!videoPlaying);
+                        }}
+                        className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full"
+                    >
+                        {videoPlaying ? <Pause size={22}/> : <Play size={22}/>}
+                    </button>
+                    <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime += 5; }} className="p-2 hover:bg-gray-700 rounded">
+                        <FastForward size={18}/>
+                    </button>
+                    <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime = videoDuration; setVideoCurrentTime(videoDuration); }} className="p-2 hover:bg-gray-700 rounded">
+                        <SkipForward size={18}/>
+                    </button>
+                    <div className="w-px h-6 bg-gray-600 mx-2"/>
+                    <div className="flex items-center gap-2">
+                        <Volume2 size={14} className="text-gray-400"/>
+                        <input
+                            type="range" min={0} max={1} step={0.05} defaultValue={1}
+                            onChange={(e) => { if (videoPreviewRef.current) videoPreviewRef.current.volume = parseFloat(e.target.value); }}
+                            className="w-16 h-1"
+                        />
                     </div>
-
-                    <div className="h-14 border-t theme-border flex items-center justify-center gap-3 bg-gray-800/50">
-                        <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime = 0; setVideoCurrentTime(0); }} className="p-2 hover:bg-gray-700 rounded">
-                            <SkipBack size={18}/>
-                        </button>
-                        <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime -= 5; }} className="p-2 hover:bg-gray-700 rounded">
-                            <Rewind size={18}/>
-                        </button>
-                        <button
-                            onClick={() => {
-                                const video = videoPreviewRef.current;
-                                if (video) {
-                                    if (videoPlaying) video.pause();
-                                    else video.play().catch(() => {});
-                                }
-                                setVideoPlaying(!videoPlaying);
-                            }}
-                            className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full"
-                        >
-                            {videoPlaying ? <Pause size={22}/> : <Play size={22}/>}
-                        </button>
-                        <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime += 5; }} className="p-2 hover:bg-gray-700 rounded">
-                            <FastForward size={18}/>
-                        </button>
-                        <button onClick={() => { if (videoPreviewRef.current) videoPreviewRef.current.currentTime = videoDuration; setVideoCurrentTime(videoDuration); }} className="p-2 hover:bg-gray-700 rounded">
-                            <SkipForward size={18}/>
-                        </button>
-                        <div className="w-px h-6 bg-gray-600 mx-2"/>
-                        <div className="flex items-center gap-2">
-                            <Volume2 size={14} className="text-gray-400"/>
-                            <input
-                                type="range" min={0} max={1} step={0.05} defaultValue={1}
-                                onChange={(e) => { if (videoPreviewRef.current) videoPreviewRef.current.volume = parseFloat(e.target.value); }}
-                                className="w-16 h-1"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                <div className={`${videoPanelCollapsed === 'inspector' ? 'w-0 overflow-hidden' : 'w-64'} border-l theme-border flex flex-col overflow-hidden theme-bg-secondary transition-all duration-200`}>
-                    <div className="p-2 border-b theme-border flex items-center justify-between">
-                        <h4 className="text-xs font-semibold text-gray-400 uppercase">Inspector</h4>
-                        <button
-                            onClick={() => setVideoPanelCollapsed(videoPanelCollapsed === 'inspector' ? '' : 'inspector')}
-                            className="p-0.5 hover:bg-gray-700 rounded"
-                            title={videoPanelCollapsed === 'inspector' ? 'Show inspector' : 'Hide inspector'}
-                        >
-                            {videoPanelCollapsed === 'inspector' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                        </button>
-                    </div>
-                    {videoPanelCollapsed !== 'inspector' && (
-                    <div className="flex-1 overflow-y-auto p-3">
-                        {selectedClipId ? (() => {
-                            const clip = videoClips.find(c => c.id === selectedClipId);
-                            if (!clip) return null;
-                            return (
-                                <div className="space-y-4">
-                                    <div className={`p-3 rounded-lg ${clip.type === 'video' ? 'bg-blue-600/20' : 'bg-green-600/20'}`}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            {clip.type === 'video' ? <Film size={16} className="text-blue-400"/> : <Music size={16} className="text-green-400"/>}
-                                            <span className="text-sm font-medium truncate">{clip.name}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-400">Duration: {formatTimeShort(clip.duration || 0)}</p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 uppercase">Name</label>
-                                        <input
-                                            type="text"
-                                            value={clip.name || ''}
-                                            onChange={(e) => setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, name: e.target.value} : c))}
-                                            className="w-full theme-input text-sm mt-1"
-                                        />
-                                    </div>
-
-                                    {clip.trackId && (
-                                        <>
-                                            <div>
-                                                <label className="text-xs text-gray-400 uppercase">Position</label>
-                                                <input
-                                                    type="number"
-                                                    value={(clip.x || 0).toFixed(2)}
-                                                    onChange={(e) => setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, x: parseFloat(e.target.value) || 0} : c))}
-                                                    className="w-full theme-input text-sm mt-1"
-                                                    step={0.1}
-                                                />
-                                            </div>
-
-                                            <div>
-                                                <label className="text-xs text-gray-400 uppercase">Volume</label>
-                                                <input
-                                                    type="range" min={0} max={2} step={0.01}
-                                                    value={clip.volume || 1}
-                                                    onChange={(e) => setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, volume: parseFloat(e.target.value)} : c))}
-                                                    className="w-full mt-1"
-                                                />
-                                                <span className="text-xs text-gray-500">{Math.round((clip.volume || 1) * 100)}%</span>
-                                            </div>
-
-                                            <div>
-                                                <label className="text-xs text-gray-400 uppercase">Speed</label>
-                                                <select
-                                                    value={clip.speed || 1}
-                                                    onChange={(e) => setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, speed: parseFloat(e.target.value)} : c))}
-                                                    className="w-full theme-input text-sm mt-1"
-                                                >
-                                                    <option value={0.25}>0.25x</option>
-                                                    <option value={0.5}>0.5x</option>
-                                                    <option value={0.75}>0.75x</option>
-                                                    <option value={1}>1x (Normal)</option>
-                                                    <option value={1.25}>1.25x</option>
-                                                    <option value={1.5}>1.5x</option>
-                                                    <option value={2}>2x</option>
-                                                </select>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    <div className="pt-2 border-t theme-border space-y-2">
-                                        {!clip.trackId && (
-                                            <button
-                                                onClick={() => {
-                                                    const trackId = clip.type === 'video' ? 'video-1' : 'audio-1';
-                                                    setVideoClips(prev => prev.map(c => c.id === clip.id ? {...c, trackId, x: 0} : c));
-                                                }}
-                                                className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-xs"
-                                            >
-                                                Add to Timeline
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => { setVideoClips(prev => prev.filter(c => c.id !== clip.id)); setSelectedClipId(null); }}
-                                            className="w-full py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 text-xs"
-                                        >
-                                            Delete Clip
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })() : selectedTransitionId ? (() => {
-                            const transition = videoTransitions.find(t => t.id === selectedTransitionId);
-                            if (!transition) return null;
-                            return (
-                                <div className="space-y-4">
-                                    <div className="p-3 rounded-lg bg-purple-600/20">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <Blend size={16} className="text-purple-400"/>
-                                            <span className="text-sm font-medium">Transition</span>
-                                        </div>
-                                        <p className="text-xs text-gray-400">Duration: {transition.duration}s</p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 uppercase">Type</label>
-                                        <select
-                                            value={transition.type}
-                                            onChange={(e) => setVideoTransitions(prev => prev.map(t =>
-                                                t.id === transition.id ? {...t, type: e.target.value} : t
-                                            ))}
-                                            className="w-full theme-input text-sm mt-1"
-                                        >
-                                            <option value="crossfade">Cross Fade</option>
-                                            <option value="fade-black">Fade to Black</option>
-                                            <option value="fade-white">Fade to White</option>
-                                            <option value="wipe-left">Wipe Left</option>
-                                            <option value="wipe-right">Wipe Right</option>
-                                            <option value="wipe-up">Wipe Up</option>
-                                            <option value="wipe-down">Wipe Down</option>
-                                            <option value="dissolve">Dissolve</option>
-                                            <option value="zoom">Zoom</option>
-                                        </select>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 uppercase">Duration (s)</label>
-                                        <input
-                                            type="range"
-                                            min={0.25}
-                                            max={3}
-                                            step={0.25}
-                                            value={transition.duration}
-                                            onChange={(e) => setVideoTransitions(prev => prev.map(t =>
-                                                t.id === transition.id ? {...t, duration: parseFloat(e.target.value)} : t
-                                            ))}
-                                            className="w-full mt-1"
-                                        />
-                                        <span className="text-xs text-gray-500">{transition.duration}s</span>
-                                    </div>
-
-                                    <button
-                                        onClick={() => {
-                                            setVideoTransitions(prev => prev.filter(t => t.id !== transition.id));
-                                            setSelectedTransitionId(null);
-                                        }}
-                                        className="w-full py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 text-xs"
-                                    >
-                                        Delete Transition
-                                    </button>
-                                </div>
-                            );
-                        })() : selectedVideoTextId ? (() => {
-                            const textLayer = videoTextLayers.find(t => t.id === selectedVideoTextId);
-                            if (!textLayer) return null;
-                            return (
-                                <div className="space-y-4">
-                                    <div className="p-3 rounded-lg bg-orange-600/20">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <Type size={16} className="text-orange-400"/>
-                                            <span className="text-sm font-medium">Text Overlay</span>
-                                        </div>
-                                        <p className="text-xs text-gray-400">
-                                            {textLayer.startTime.toFixed(1)}s - {(textLayer.startTime + textLayer.duration).toFixed(1)}s
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 uppercase">Text Content</label>
-                                        <textarea
-                                            value={textLayer.content}
-                                            onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                t.id === textLayer.id ? {...t, content: e.target.value} : t
-                                            ))}
-                                            className="w-full theme-input text-sm mt-1"
-                                            rows={2}
-                                        />
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="text-xs text-gray-400 uppercase">Start Time</label>
-                                            <input
-                                                type="number"
-                                                value={textLayer.startTime}
-                                                onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                    t.id === textLayer.id ? {...t, startTime: parseFloat(e.target.value) || 0} : t
-                                                ))}
-                                                className="w-full theme-input text-sm mt-1"
-                                                step={0.5}
-                                                min={0}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-gray-400 uppercase">Duration</label>
-                                            <input
-                                                type="number"
-                                                value={textLayer.duration}
-                                                onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                    t.id === textLayer.id ? {...t, duration: parseFloat(e.target.value) || 1} : t
-                                                ))}
-                                                className="w-full theme-input text-sm mt-1"
-                                                step={0.5}
-                                                min={0.5}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="text-xs text-gray-400 uppercase">Font Size</label>
-                                            <input
-                                                type="number"
-                                                value={textLayer.fontSize}
-                                                onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                    t.id === textLayer.id ? {...t, fontSize: parseInt(e.target.value) || 32} : t
-                                                ))}
-                                                className="w-full theme-input text-sm mt-1"
-                                                min={12}
-                                                max={200}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-gray-400 uppercase">Color</label>
-                                            <input
-                                                type="color"
-                                                value={textLayer.color}
-                                                onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                    t.id === textLayer.id ? {...t, color: e.target.value} : t
-                                                ))}
-                                                className="w-full h-8 mt-1 rounded cursor-pointer"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs text-gray-400 uppercase">Font</label>
-                                        <select
-                                            value={textLayer.fontFamily}
-                                            onChange={(e) => setVideoTextLayers(prev => prev.map(t =>
-                                                t.id === textLayer.id ? {...t, fontFamily: e.target.value} : t
-                                            ))}
-                                            className="w-full theme-input text-sm mt-1"
-                                        >
-                                            <option value="Arial">Arial</option>
-                                            <option value="Helvetica">Helvetica</option>
-                                            <option value="Times New Roman">Times New Roman</option>
-                                            <option value="Georgia">Georgia</option>
-                                            <option value="Impact">Impact</option>
-                                            <option value="Verdana">Verdana</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setVideoTextLayers(prev => prev.map(t =>
-                                                t.id === textLayer.id ? {...t, bold: !t.bold} : t
-                                            ))}
-                                            className={`p-2 rounded ${textLayer.bold ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        >
-                                            <Bold size={14}/>
-                                        </button>
-                                        <button
-                                            onClick={() => setVideoTextLayers(prev => prev.map(t =>
-                                                t.id === textLayer.id ? {...t, italic: !t.italic} : t
-                                            ))}
-                                            className={`p-2 rounded ${textLayer.italic ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        >
-                                            <Italic size={14}/>
-                                        </button>
-                                        <div className="border-l theme-border h-6 mx-1"/>
-                                        <button
-                                            onClick={() => setVideoTextLayers(prev => prev.map(t =>
-                                                t.id === textLayer.id ? {...t, hasBackground: !t.hasBackground} : t
-                                            ))}
-                                            className={`px-2 py-1 rounded text-xs ${textLayer.hasBackground ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        >
-                                            BG
-                                        </button>
-                                    </div>
-
-                                    <button
-                                        onClick={() => {
-                                            setVideoTextLayers(prev => prev.filter(t => t.id !== textLayer.id));
-                                            setSelectedVideoTextId(null);
-                                        }}
-                                        className="w-full py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 text-xs"
-                                    >
-                                        Delete Text Layer
-                                    </button>
-                                </div>
-                            );
-                        })() : (
-                            <div className="text-center py-8 text-gray-600">
-                                <Sliders size={24} className="mx-auto mb-2 opacity-50"/>
-                                <p className="text-xs">Select a clip, transition, or text</p>
-                            </div>
-                        )}
-                    </div>
-                    )}
                 </div>
             </div>
 
@@ -5755,291 +5429,9 @@ const renderDarkRoomLegacy = () => {
     );
 };
 
-const renderAnimationStudio = () => {
-    const [animFrames, setAnimFrames] = useState<Array<{id: string; name: string; duration: number; image: string | null}>>([
-        { id: 'frame_1', name: 'Frame 1', duration: 100, image: null }
-    ]);
-    const [selectedFrameId, setSelectedFrameId] = useState<string>('frame_1');
-    const [animPlaying, setAnimPlaying] = useState(false);
-    const [animFps, setAnimFps] = useState(12);
-    const animPreviewRef = useRef<HTMLDivElement>(null);
-    const selectedFrame = animFrames.find(f => f.id === selectedFrameId);
+const renderAnimationStudio = () => <AnimationStudio />;
 
-    return (
-        <div className="flex-1 flex overflow-hidden">
-            <div className="w-56 border-r theme-border flex flex-col overflow-hidden theme-bg-secondary">
-                <div className="p-2 border-b theme-border">
-                    <h4 className="text-xs font-semibold text-gray-400 uppercase">Frames</h4>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                    {animFrames.map((frame, i) => (
-                        <div
-                            key={frame.id}
-                            onClick={() => setSelectedFrameId(frame.id)}
-                            className={`p-2 rounded cursor-pointer flex items-center gap-2 ${
-                                selectedFrameId === frame.id ? 'bg-blue-600/40 ring-1 ring-blue-500' : 'bg-gray-700/30 hover:bg-gray-700/50'
-                            }`}
-                        >
-                            <span className="text-xs text-gray-400 w-6">{i + 1}</span>
-                            <span className="text-xs flex-1 truncate">{frame.name}</span>
-                            <span className="text-xs text-gray-500">{frame.duration}ms</span>
-                        </div>
-                    ))}
-                    <button
-                        onClick={() => {
-                            const id = `frame_${Date.now()}`;
-                            setAnimFrames(prev => [...prev, { id, name: `Frame ${prev.length + 1}`, duration: 100, image: null }]);
-                            setSelectedFrameId(id);
-                        }}
-                        className="w-full py-1.5 text-xs theme-button rounded flex items-center justify-center gap-1"
-                    >
-                        <PlusCircle size={12} /> Add Frame
-                    </button>
-                </div>
-            </div>
-
-            <div className="flex-1 flex flex-col">
-                <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50">
-                    <div ref={animPreviewRef} className="relative w-full max-w-4xl aspect-video bg-gray-800/80 rounded-lg overflow-hidden shadow-2xl flex items-center justify-center">
-                        {selectedFrame?.image ? (
-                            <img src={selectedFrame.image} className="max-w-full max-h-full object-contain" />
-                        ) : (
-                            <div className="text-center">
-                                <Film size={48} className="mx-auto text-gray-700 mb-2" />
-                                <p className="text-gray-600 text-sm">Select a frame or drag an image here</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="h-14 border-t theme-border flex items-center justify-center gap-3 bg-gray-800/50">
-                    <button
-                        onClick={() => setAnimPlaying(!animPlaying)}
-                        className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full"
-                    >
-                        {animPlaying ? <Pause size={22} /> : <Play size={22} />}
-                    </button>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-gray-400">FPS:</span>
-                        <input
-                            type="number"
-                            min={1} max={60} value={animFps}
-                            onChange={e => setAnimFps(parseInt(e.target.value) || 12)}
-                            className="w-14 theme-input text-xs text-center"
-                        />
-                    </div>
-                </div>
-
-                <div className="h-32 border-t theme-border flex overflow-x-auto bg-gray-900/80">
-                    <div className="flex gap-1 p-2">
-                        {animFrames.map((frame, i) => (
-                            <div
-                                key={frame.id}
-                                onClick={() => setSelectedFrameId(frame.id)}
-                                className={`flex-shrink-0 w-20 h-20 rounded cursor-pointer border-2 flex flex-col items-center justify-center ${
-                                    selectedFrameId === frame.id ? 'border-blue-500 bg-blue-600/20' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                                }`}
-                            >
-                                {frame.image ? (
-                                    <img src={frame.image} className="w-full h-full object-cover rounded" />
-                                ) : (
-                                    <ImageIcon size={20} className="text-gray-600" />
-                                )}
-                                <span className="text-xs text-gray-500 mt-0.5">{i + 1}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
-            <div className="w-64 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
-                <div className="p-2 border-b theme-border">
-                    <h4 className="text-xs font-semibold text-gray-400 uppercase">Properties</h4>
-                </div>
-                {selectedFrame && (
-                    <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                        <div>
-                            <label className="text-xs text-gray-400 uppercase">Name</label>
-                            <input
-                                type="text"
-                                value={selectedFrame.name}
-                                onChange={e => setAnimFrames(prev => prev.map(f => f.id === selectedFrame.id ? {...f, name: e.target.value} : f))}
-                                className="w-full theme-input text-sm mt-1"
-                            />
-                        </div>
-                        <div>
-                            <label className="text-xs text-gray-400 uppercase">Duration (ms)</label>
-                            <input
-                                type="number"
-                                value={selectedFrame.duration}
-                                onChange={e => setAnimFrames(prev => prev.map(f => f.id === selectedFrame.id ? {...f, duration: parseInt(e.target.value) || 50} : f))}
-                                className="w-full theme-input text-sm mt-1"
-                                min={10}
-                            />
-                        </div>
-                        <button
-                            onClick={() => {
-                                setAnimFrames(prev => prev.filter(f => f.id !== selectedFrame.id));
-                                setSelectedFrameId(animFrames[0]?.id || '');
-                            }}
-                            className="w-full py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 text-xs"
-                        >
-                            Delete Frame
-                        </button>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-};
-
-const renderGameEngine = () => {
-    const [objects, setObjects] = useState<Array<{id: string; x: number; y: number; vx: number; vy: number; w: number; h: number; color: string; mass: number}>>([]);
-    const [gravity, setGravity] = useState(9.8);
-    const [paused, setPaused] = useState(false);
-    const [selectedObj, setSelectedObj] = useState<string | null>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const animRef = useRef<number | null>(null);
-
-    useEffect(() => {
-        if (paused) {
-            if (animRef.current) cancelAnimationFrame(animRef.current);
-            return;
-        }
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const step = () => {
-            setObjects(prev => {
-                const w = canvas.clientWidth;
-                const h = canvas.clientHeight;
-                const updated = prev.map(obj => {
-                    let { x, y, vx, vy, mass } = obj;
-                    vy += gravity * 0.01;
-                    x += vx * 0.01;
-                    y += vy * 0.01;
-                    if (y + obj.h >= h) { y = h - obj.h; vy *= -0.5; }
-                    if (y <= 0) { y = 0; vy *= -0.5; }
-                    if (x + obj.w >= w) { x = w - obj.w; vx *= -0.5; }
-                    if (x <= 0) { x = 0; vx *= -0.5; }
-                    return { ...obj, x, y, vx, vy };
-                });
-
-                ctx.clearRect(0, 0, w, h);
-                updated.forEach(obj => {
-                    ctx.fillStyle = obj.color;
-                    ctx.fillRect(Math.round(obj.x), Math.round(obj.y), obj.w, obj.h);
-                });
-
-                return updated;
-            });
-            animRef.current = requestAnimationFrame(step);
-        };
-
-        animRef.current = requestAnimationFrame(step);
-        return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
-    }, [paused, gravity]);
-
-    const spawnObject = (x: number, y: number) => {
-        const colors = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899'];
-        setObjects(prev => [...prev, {
-            id: `obj_${Date.now()}`,
-            x: x - 15, y: y - 15,
-            vx: (Math.random() - 0.5) * 200,
-            vy: (Math.random() - 0.5) * 100,
-            w: 30, h: 30,
-            color: colors[Math.floor(Math.random() * colors.length)],
-            mass: 1
-        }]);
-    };
-
-    return (
-        <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="h-10 border-b theme-border flex items-center gap-2 px-3 bg-gray-800/80">
-                <span className="text-xs text-gray-400">Physics Sandbox</span>
-                <div className="w-px h-4 bg-gray-600" />
-                <button
-                    onClick={() => setPaused(!paused)}
-                    className={`p-1.5 rounded ${paused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'}`}
-                    title={paused ? 'Play' : 'Pause'}
-                >
-                    {paused ? <Play size={14} /> : <Pause size={14} />}
-                </button>
-                <div className="flex items-center gap-1">
-                    <span className="text-xs text-gray-400">Gravity:</span>
-                    <input
-                        type="range"
-                        min={0} max={30} step={0.5}
-                        value={gravity}
-                        onChange={e => setGravity(parseFloat(e.target.value))}
-                        className="w-24 h-1"
-                    />
-                    <span className="text-xs text-gray-400 w-8">{gravity}</span>
-                </div>
-                <button
-                    onClick={() => setObjects([])}
-                    className="p-1.5 hover:bg-red-600/30 rounded"
-                    title="Clear all"
-                >
-                    <Trash2 size={14} className="text-red-400" />
-                </button>
-                <div className="flex-1" />
-                <span className="text-xs text-gray-500">{objects.length} objects</span>
-            </div>
-            <div className="flex-1 flex overflow-hidden">
-                <canvas
-                    ref={canvasRef}
-                    className="flex-1 cursor-crosshair bg-gray-900/80"
-                    onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        spawnObject(e.clientX - rect.left, e.clientY - rect.top);
-                    }}
-                />
-                <div className="w-56 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
-                    <div className="p-2 border-b theme-border">
-                        <h4 className="text-xs font-semibold text-gray-400 uppercase">Inspector</h4>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-3">
-                        {selectedObj ? (() => {
-                            const obj = objects.find(o => o.id === selectedObj);
-                            if (!obj) return null;
-                            return (
-                                <div className="space-y-3">
-                                    <p className="text-xs text-gray-400">Object: {obj.id.slice(0, 12)}</p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="text-xs text-gray-500">X</label>
-                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.x.toFixed(1)}</div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-gray-500">Y</label>
-                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.y.toFixed(1)}</div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-gray-500">VX</label>
-                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.vx.toFixed(1)}</div>
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-gray-500">VY</label>
-                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.vy.toFixed(1)}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })() : (
-                            <div className="text-center py-8 text-gray-600">
-                                <Square size={24} className="mx-auto mb-2 opacity-50" />
-                                <p className="text-xs">Click canvas to spawn objects.<br />Select an object to inspect.</p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
+const renderGameEngine = () => <GameEngine />;
 
 const renderSettings = () => {
     const handleAddDefaultFolder = async (label: string, defaultPath: string) => {
@@ -6193,7 +5585,7 @@ const VIXYNT_MODES = [
     { id: 'labeling', name: 'Labeling', icon: Tag, group: 'manage' },
     { id: 'settings', name: 'Settings', icon: Sliders, group: 'manage' },
     { id: 'anim-studio', name: 'Animation Studio', icon: Film, group: 'create' },
-    { id: 'game-engine', name: 'Game Engine', icon: Crop, group: 'create' }
+    { id: 'game-engine', name: 'Game Engine', icon: Circle, group: 'create' }
 ];
 
 const AI_VIXYNT_MODE_IDS = ['generator', 'video-gen', 'anim-studio', 'game-engine'];
@@ -6270,7 +5662,6 @@ return (
         {activeTab === 'labeling' && renderLabeling()}
         {activeTab === 'settings' && renderSettings()}
         {aiEnabled && activeTab === 'anim-studio' && renderAnimationStudio()}
-        {aiEnabled && activeTab === 'game-engine' && renderGameEngine()}
         {aiEnabled && renderFineTuneModal()}
       </main>
     </div>
