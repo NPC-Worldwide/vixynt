@@ -1106,21 +1106,6 @@ useEffect(() => {
 
   }, [selectedImage, layers, selectionPath, activeTab]);
 
-  useEffect(() => {
-    if (currentPath && currentPath !== projectPath) {
-        setProjectPath(currentPath);
-    }
-  }, [currentPath]);
-
-    useEffect(() => {
-        const initialSources = [
-          { id: 'project-images', name: 'Project Images', path: projectPath, icon: Folder },
-          { id: 'global-images', name: 'Global Images', path: '~/.npcsh/images', icon: ImageIcon },
-          { id: 'screenshots', name: 'Screenshots', path: '~/.npcsh/screenshots', icon: Camera },
-        ];
-        loadImagesForAllSources(initialSources);
-    }, [projectPath, loadImagesForAllSources]);
-
     useEffect(() => {
       const handleKeyDown = (e) => {
           if (lightboxIndex !== null) {
@@ -2322,20 +2307,16 @@ const handleUseForGeneration = () => {
                         <div className="mt-3 space-y-3 pl-4">
                             <div>
                                 <label className="text-xs text-gray-200 mb-1 block">Save Location</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        onClick={() => setActiveSourceId('project-images')}
-                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'project-images' ? 'bg-green-600/30 text-green-200 border border-green-500' : 'bg-white/5 text-gray-300 border border-white/10'}`}
-                                    >
-                                        <Folder size={12} /> Project
-                                    </button>
-                                    <button
-                                        onClick={() => setActiveSourceId('global-images')}
-                                        className={`p-2 text-xs rounded flex items-center justify-center gap-1.5 ${activeSourceId === 'global-images' ? 'bg-blue-600/30 text-blue-200 border border-blue-500' : 'bg-white/5 text-gray-300 border border-white/10'}`}
-                                    >
-                                        <ImageIcon size={12} /> Global
-                                    </button>
-                                </div>
+                                <select
+                                    value={activeSourceId}
+                                    onChange={e => setActiveSourceId(e.target.value)}
+                                    className="w-full theme-input text-xs"
+                                >
+                                    {imageSources.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                    {imageSources.length === 0 && <option value="">No folders tracked</option>}
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs text-gray-200 mb-1 block">Filename Prefix</label>
@@ -5774,6 +5755,292 @@ const renderDarkRoomLegacy = () => {
     );
 };
 
+const renderAnimationStudio = () => {
+    const [animFrames, setAnimFrames] = useState<Array<{id: string; name: string; duration: number; image: string | null}>>([
+        { id: 'frame_1', name: 'Frame 1', duration: 100, image: null }
+    ]);
+    const [selectedFrameId, setSelectedFrameId] = useState<string>('frame_1');
+    const [animPlaying, setAnimPlaying] = useState(false);
+    const [animFps, setAnimFps] = useState(12);
+    const animPreviewRef = useRef<HTMLDivElement>(null);
+    const selectedFrame = animFrames.find(f => f.id === selectedFrameId);
+
+    return (
+        <div className="flex-1 flex overflow-hidden">
+            <div className="w-56 border-r theme-border flex flex-col overflow-hidden theme-bg-secondary">
+                <div className="p-2 border-b theme-border">
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase">Frames</h4>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {animFrames.map((frame, i) => (
+                        <div
+                            key={frame.id}
+                            onClick={() => setSelectedFrameId(frame.id)}
+                            className={`p-2 rounded cursor-pointer flex items-center gap-2 ${
+                                selectedFrameId === frame.id ? 'bg-blue-600/40 ring-1 ring-blue-500' : 'bg-gray-700/30 hover:bg-gray-700/50'
+                            }`}
+                        >
+                            <span className="text-xs text-gray-400 w-6">{i + 1}</span>
+                            <span className="text-xs flex-1 truncate">{frame.name}</span>
+                            <span className="text-xs text-gray-500">{frame.duration}ms</span>
+                        </div>
+                    ))}
+                    <button
+                        onClick={() => {
+                            const id = `frame_${Date.now()}`;
+                            setAnimFrames(prev => [...prev, { id, name: `Frame ${prev.length + 1}`, duration: 100, image: null }]);
+                            setSelectedFrameId(id);
+                        }}
+                        className="w-full py-1.5 text-xs theme-button rounded flex items-center justify-center gap-1"
+                    >
+                        <PlusCircle size={12} /> Add Frame
+                    </button>
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col">
+                <div className="flex-1 flex items-center justify-center p-4 bg-gray-900/50">
+                    <div ref={animPreviewRef} className="relative w-full max-w-4xl aspect-video bg-gray-800/80 rounded-lg overflow-hidden shadow-2xl flex items-center justify-center">
+                        {selectedFrame?.image ? (
+                            <img src={selectedFrame.image} className="max-w-full max-h-full object-contain" />
+                        ) : (
+                            <div className="text-center">
+                                <Film size={48} className="mx-auto text-gray-700 mb-2" />
+                                <p className="text-gray-600 text-sm">Select a frame or drag an image here</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="h-14 border-t theme-border flex items-center justify-center gap-3 bg-gray-800/50">
+                    <button
+                        onClick={() => setAnimPlaying(!animPlaying)}
+                        className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full"
+                    >
+                        {animPlaying ? <Pause size={22} /> : <Play size={22} />}
+                    </button>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">FPS:</span>
+                        <input
+                            type="number"
+                            min={1} max={60} value={animFps}
+                            onChange={e => setAnimFps(parseInt(e.target.value) || 12)}
+                            className="w-14 theme-input text-xs text-center"
+                        />
+                    </div>
+                </div>
+
+                <div className="h-32 border-t theme-border flex overflow-x-auto bg-gray-900/80">
+                    <div className="flex gap-1 p-2">
+                        {animFrames.map((frame, i) => (
+                            <div
+                                key={frame.id}
+                                onClick={() => setSelectedFrameId(frame.id)}
+                                className={`flex-shrink-0 w-20 h-20 rounded cursor-pointer border-2 flex flex-col items-center justify-center ${
+                                    selectedFrameId === frame.id ? 'border-blue-500 bg-blue-600/20' : 'border-gray-700 bg-gray-800 hover:border-gray-600'
+                                }`}
+                            >
+                                {frame.image ? (
+                                    <img src={frame.image} className="w-full h-full object-cover rounded" />
+                                ) : (
+                                    <ImageIcon size={20} className="text-gray-600" />
+                                )}
+                                <span className="text-xs text-gray-500 mt-0.5">{i + 1}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <div className="w-64 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
+                <div className="p-2 border-b theme-border">
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase">Properties</h4>
+                </div>
+                {selectedFrame && (
+                    <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                        <div>
+                            <label className="text-xs text-gray-400 uppercase">Name</label>
+                            <input
+                                type="text"
+                                value={selectedFrame.name}
+                                onChange={e => setAnimFrames(prev => prev.map(f => f.id === selectedFrame.id ? {...f, name: e.target.value} : f))}
+                                className="w-full theme-input text-sm mt-1"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-400 uppercase">Duration (ms)</label>
+                            <input
+                                type="number"
+                                value={selectedFrame.duration}
+                                onChange={e => setAnimFrames(prev => prev.map(f => f.id === selectedFrame.id ? {...f, duration: parseInt(e.target.value) || 50} : f))}
+                                className="w-full theme-input text-sm mt-1"
+                                min={10}
+                            />
+                        </div>
+                        <button
+                            onClick={() => {
+                                setAnimFrames(prev => prev.filter(f => f.id !== selectedFrame.id));
+                                setSelectedFrameId(animFrames[0]?.id || '');
+                            }}
+                            className="w-full py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-red-400 text-xs"
+                        >
+                            Delete Frame
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const renderGameEngine = () => {
+    const [objects, setObjects] = useState<Array<{id: string; x: number; y: number; vx: number; vy: number; w: number; h: number; color: string; mass: number}>>([]);
+    const [gravity, setGravity] = useState(9.8);
+    const [paused, setPaused] = useState(false);
+    const [selectedObj, setSelectedObj] = useState<string | null>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const animRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (paused) {
+            if (animRef.current) cancelAnimationFrame(animRef.current);
+            return;
+        }
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const step = () => {
+            setObjects(prev => {
+                const w = canvas.clientWidth;
+                const h = canvas.clientHeight;
+                const updated = prev.map(obj => {
+                    let { x, y, vx, vy, mass } = obj;
+                    vy += gravity * 0.01;
+                    x += vx * 0.01;
+                    y += vy * 0.01;
+                    if (y + obj.h >= h) { y = h - obj.h; vy *= -0.5; }
+                    if (y <= 0) { y = 0; vy *= -0.5; }
+                    if (x + obj.w >= w) { x = w - obj.w; vx *= -0.5; }
+                    if (x <= 0) { x = 0; vx *= -0.5; }
+                    return { ...obj, x, y, vx, vy };
+                });
+
+                ctx.clearRect(0, 0, w, h);
+                updated.forEach(obj => {
+                    ctx.fillStyle = obj.color;
+                    ctx.fillRect(Math.round(obj.x), Math.round(obj.y), obj.w, obj.h);
+                });
+
+                return updated;
+            });
+            animRef.current = requestAnimationFrame(step);
+        };
+
+        animRef.current = requestAnimationFrame(step);
+        return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+    }, [paused, gravity]);
+
+    const spawnObject = (x: number, y: number) => {
+        const colors = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899'];
+        setObjects(prev => [...prev, {
+            id: `obj_${Date.now()}`,
+            x: x - 15, y: y - 15,
+            vx: (Math.random() - 0.5) * 200,
+            vy: (Math.random() - 0.5) * 100,
+            w: 30, h: 30,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            mass: 1
+        }]);
+    };
+
+    return (
+        <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="h-10 border-b theme-border flex items-center gap-2 px-3 bg-gray-800/80">
+                <span className="text-xs text-gray-400">Physics Sandbox</span>
+                <div className="w-px h-4 bg-gray-600" />
+                <button
+                    onClick={() => setPaused(!paused)}
+                    className={`p-1.5 rounded ${paused ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'}`}
+                    title={paused ? 'Play' : 'Pause'}
+                >
+                    {paused ? <Play size={14} /> : <Pause size={14} />}
+                </button>
+                <div className="flex items-center gap-1">
+                    <span className="text-xs text-gray-400">Gravity:</span>
+                    <input
+                        type="range"
+                        min={0} max={30} step={0.5}
+                        value={gravity}
+                        onChange={e => setGravity(parseFloat(e.target.value))}
+                        className="w-24 h-1"
+                    />
+                    <span className="text-xs text-gray-400 w-8">{gravity}</span>
+                </div>
+                <button
+                    onClick={() => setObjects([])}
+                    className="p-1.5 hover:bg-red-600/30 rounded"
+                    title="Clear all"
+                >
+                    <Trash2 size={14} className="text-red-400" />
+                </button>
+                <div className="flex-1" />
+                <span className="text-xs text-gray-500">{objects.length} objects</span>
+            </div>
+            <div className="flex-1 flex overflow-hidden">
+                <canvas
+                    ref={canvasRef}
+                    className="flex-1 cursor-crosshair bg-gray-900/80"
+                    onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        spawnObject(e.clientX - rect.left, e.clientY - rect.top);
+                    }}
+                />
+                <div className="w-56 border-l theme-border flex flex-col overflow-hidden theme-bg-secondary">
+                    <div className="p-2 border-b theme-border">
+                        <h4 className="text-xs font-semibold text-gray-400 uppercase">Inspector</h4>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-3">
+                        {selectedObj ? (() => {
+                            const obj = objects.find(o => o.id === selectedObj);
+                            if (!obj) return null;
+                            return (
+                                <div className="space-y-3">
+                                    <p className="text-xs text-gray-400">Object: {obj.id.slice(0, 12)}</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-xs text-gray-500">X</label>
+                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.x.toFixed(1)}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-500">Y</label>
+                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.y.toFixed(1)}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-500">VX</label>
+                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.vx.toFixed(1)}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-gray-500">VY</label>
+                                            <div className="text-sm theme-bg-primary px-2 py-1 rounded">{obj.vy.toFixed(1)}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })() : (
+                            <div className="text-center py-8 text-gray-600">
+                                <Square size={24} className="mx-auto mb-2 opacity-50" />
+                                <p className="text-xs">Click canvas to spawn objects.<br />Select an object to inspect.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const renderSettings = () => {
     const handleAddDefaultFolder = async (label: string, defaultPath: string) => {
         try {
@@ -6002,6 +6269,8 @@ return (
         {activeTab === 'metadata' && renderMetadata()}
         {activeTab === 'labeling' && renderLabeling()}
         {activeTab === 'settings' && renderSettings()}
+        {aiEnabled && activeTab === 'anim-studio' && renderAnimationStudio()}
+        {aiEnabled && activeTab === 'game-engine' && renderGameEngine()}
         {aiEnabled && renderFineTuneModal()}
       </main>
     </div>
