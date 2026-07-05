@@ -12,6 +12,7 @@ interface Settings {
   defaultImageOutputDir: string;
   defaultModelOutputDir: string;
   backendPythonPath: string | null;
+  providerApiKeys: Record<string, string>;
 }
 
 interface SettingsContextType {
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: Settings = {
   defaultImageOutputDir: '',
   defaultModelOutputDir: '',
   backendPythonPath: null,
+  providerApiKeys: {},
 };
 
 const STORAGE_KEY = 'vixynt_settings';

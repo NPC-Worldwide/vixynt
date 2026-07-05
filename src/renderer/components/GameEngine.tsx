@@ -30,6 +30,7 @@ const GameEngine: React.FC = () => {
   const [spawnShape, setSpawnShape] = useState<keyof typeof SHAPES>('circle');
   const [scenePrompt, setScenePrompt] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animRef = useRef<number | null>(null);
