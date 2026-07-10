@@ -5,7 +5,7 @@
 <h1 align="center">Vixynt</h1>
 
 <p align="center">
-  <strong>A standalone image and diffusion studio.</strong>
+  <strong>Visualize. Imagine. Create.</strong>
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 
 Vixynt is a focused, desktop-first creative studio for images, diffusion models, and short-form video. It brings together photo management, AI generation, editing, and model training in one fast, keyboard-friendly workspace.
 
-Built on Electron + React with the [npcts](https://github.com/npc-worldwide/npcts) component library and powered by [npcpy](https://github.com/npc-worldwide/npcpy) on the backend, Vixynt keeps your media workflow local by default and lets you plug in cloud image/video providers when you need them.
+Built on Electron + React with a Python backend, Vixynt keeps your media workflow local by default and lets you plug in cloud image/video providers when you need them.
 
 ### Highlights
 
