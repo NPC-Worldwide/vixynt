@@ -1,345 +1,329 @@
-# vixynt
+<p align="center">
+  <img src="https://raw.githubusercontent.com/npc-worldwide/vixynt/main/vixynt_nobg_keyed_nobg.png" alt="Vixynt logo with a fox holding a paintbrush and camera" width="400" height="400">
+</p>
 
-Diffusion fine-tuning experiments using the `npcpy.ft.diff` module with intelligent data augmentation.
+<h1 align="center">Vixynt</h1>
 
-## Overview
+<p align="center">
+  <strong>A standalone image and diffusion studio.</strong>
+</p>
 
-This repository contains experimental code and configurations for fine-tuning diffusion models using the `npcpy.ft.diff` module from the [npcpy](https://github.com/NPC-Worldwide/npcpy) toolkit. The project focuses on enabling users to create custom diffusion models from their own image datasets with intelligent augmentation and noise/artifact injection for improved generalization.
+<p align="center">
+  <a href="https://github.com/npc-worldwide/vixynt/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/npc-worldwide/vixynt/releases"><img src="https://img.shields.io/github/v/release/npc-worldwide/vixynt?include_prereleases" alt="Release"></a>
+  <a href="https://github.com/npc-worldwide/vixynt/actions/workflows/build.yaml"><img src="https://github.com/npc-worldwide/vixynt/actions/workflows/build.yaml/badge.svg" alt="Build Status"></a>
+</p>
 
-### Key Features
+<p align="center">
+  <a href="https://github.com/npc-worldwide/vixynt/releases"><strong>Download for Linux, macOS, and Windows</strong></a>
+</p>
 
-- **N-Variation Generation**: Generate multiple augmented variations of input images to expand training datasets
-- **Intelligent Artifact Injection**: Apply contextually-aware noise and artifacts using ResNet feature representations
-- **Flexible Augmentation**: Multiple augmentation strategies (Gaussian noise, JPEG compression, blur, color jitter, etc.)
-- **Vision Model Integration**: Caption generation for augmented images using vision models (CLIP support)
-- **Batch Processing**: Efficient batch augmentation of entire image directories
+---
 
-## Project Structure
+Vixynt is a focused, desktop-first creative studio for images, diffusion models, and short-form video. It brings together photo management, AI generation, editing, and model training in one fast, keyboard-friendly workspace.
 
-```
-vixynt/
-├── README.md                         # This file
-├── requirements.txt                  # Python dependencies
-├── setup.py                          # Package setup
-├── data/                             # Training and evaluation data
-├── figures/                          # Generated plots and visualizations
-├── experiments/                      # Experiment configurations and results
-├── src/
-│   └── vixynt/                      # Main package
-│       ├── __init__.py
-│       ├── config.py                # Configuration management
-│       ├── train.py                 # Training scripts
-│       ├── utils.py                 # Utility functions
-│       ├── evaluate.py              # Evaluation scripts
-│       ├── data_augmentation.py     # N-variation generation and noise injection
-│       └── resnet_augmentation.py   # ResNet-based feature-aware augmentation
-└── notebooks/                        # Jupyter notebooks for exploration
-```
+Built on Electron + React with the [npcts](https://github.com/npc-worldwide/npcts) component library and powered by [npcpy](https://github.com/npc-worldwide/npcpy) on the backend, Vixynt keeps your media workflow local by default and lets you plug in cloud image/video providers when you need them.
 
-## Requirements
+### Highlights
 
-- Python 3.8+
-- PyTorch 1.9+
-- Torchvision 0.10+
-- [npcpy](https://github.com/NPC-Worldwide/npcpy)
-- Transformers (for vision models)
-- See `requirements.txt` for full dependencies
+- **Gallery & Library** — Browse, sort, filter, rename, and manage images across tracked folders. Grid and list views with metadata, lightbox navigation, and batch selection.
+- **AI Image Generation** — Generate images from text prompts using local diffusers or cloud providers (OpenAI, Gemini, Anthropic, Stability, Replicate, Fal.ai, Together, Fireworks, DeepInfra, BFL/Flux, and more).
+- **DarkRoom Editor** — Edit photos with the [npcts](https://github.com/npc-worldwide/npcts) `ImageEditor`, including AI generative fill on selected regions.
+- **Video Generation** — Create short AI-generated video clips from prompts or image references.
+- **Video Editor** — Arrange clips on a timeline with tracks, transitions, text layers, and playback controls.
+- **Animation Studio** — Build frame-based animations with adjustable timing and preview playback.
+- **Game Engine** — A lightweight physics sandbox for prototyping simple 2D scenes with circles, squares, and platforms.
+- **Diffusion Fine-Tuning** — Train custom diffusion models on your own image selections with configurable epochs, batch size, and learning rate.
+- **Workflow Editor** — Chain nodes for loading, generating, upscaling, adjusting, masking, filling, and saving images.
+- **Local-first** — Your images and models stay on disk. Optional cloud providers require explicit API keys stored in settings.
 
-## Installation
+---
+
+## Setup
+
+### 1. Install
+
+Download the installer for your platform from the [releases page](https://github.com/npc-worldwide/vixynt/releases), run it, and launch Vixynt. Linux (`.deb`/`.AppImage`), macOS (`.dmg`/`.zip`), and Windows (`.exe`) builds are provided.
+
+### 2. First launch
+
+On first launch Vixynt opens with a default workspace path (your home directory). You can change the project path from the header path navigator or add tracked folders via the sidebar.
+
+### 3. Connect a model provider
+
+Open **Settings** from the sidebar or mode dropdown and add API keys for any cloud providers you want to use. Keys are stored locally in app settings. If you prefer local generation, configure a Python environment with `torch` + `diffusers` + `transformers` and select it in settings.
+
+Supported cloud providers for image and video generation include:
+
+- OpenAI
+- Gemini
+- Anthropic
+- Stability AI
+- Replicate
+- Fal.ai
+- Together AI
+- Fireworks
+- DeepInfra
+- BFL/Flux
+- Bagel
+- Leonardo
+- Ideogram
+
+### 4. Configure output directories
+
+In **Settings**, set:
+
+- **Default Image Output Directory** — where generated images are saved.
+- **Default Model Output Directory** — where fine-tuned diffusion models are saved.
+- **Tracked Folders** — quick-access folders for the gallery (Pictures, Photos, Desktop, custom paths, etc.).
+
+### 5. Python backend environment
+
+Vixynt bundles a lightweight Python backend via `vixynt_serve.py`. For AI features that need heavy dependencies (diffusion training, image generation with local models), the app shells out to a configured Python virtual environment instead of bundling those packages:
+
+1. Open **Settings**.
+2. Set the **Backend Python Path** or let Vixynt auto-detect Python.
+3. Install the needed packages in that environment:
+   - `torch torchvision torchaudio`
+   - `diffusers transformers accelerate safetensors`
+
+### 6. Troubleshooting
+
+- **Backend not starting** — check the log at `~/.npcsh/vixynt/logs/backend.log` (macOS/Linux) or the equivalent path on Windows.
+- **No models available** — add a cloud API key in **Settings** or install a local diffusers environment.
+- **Images not loading in gallery** — ensure the tracked folder path exists and contains supported formats (JPG, PNG, WebP, GIF).
+
+---
+
+## Table of Contents
+
+- [Gallery & Media Management](#gallery--media-management)
+- [AI Image Generation](#ai-image-generation)
+- [DarkRoom Editor](#darkroom-editor)
+- [Video Generation](#video-generation)
+- [Video Editor](#video-editor)
+- [Animation Studio](#animation-studio)
+- [Game Engine](#game-engine)
+- [Diffusion Fine-Tuning](#diffusion-fine-tuning)
+- [Workflow Editor](#workflow-editor)
+- [Settings](#settings)
+- [Development Setup](#development-setup)
+- [Community](#community)
+- [License](#license)
+
+---
+
+## Gallery & Media Management
+
+The Gallery is the default workspace for browsing your image collection.
+
+### Tracked Folders
+
+Add any folder from your filesystem to the sidebar. Vixynt watches that folder and shows all supported images. Remove or refresh folders from the sidebar controls.
+
+### Views & Sorting
+
+- **Grid view** — thumbnail browsing with selection.
+- **List view** — detailed list with file size, type, and modification date.
+- **Sort** by name, type, size, or date; toggle ascending/descending.
+- **Filter** by format: All, JPG, PNG, WebP, GIF.
+
+### Selection & Actions
+
+- Click to select, `Shift`/`Ctrl`/`Cmd` + click for multi-select.
+- Right-click an image for quick actions: Edit, Use for Generation, Rename, Delete.
+- Double-click or press Enter to open the lightbox for fullscreen browsing with keyboard navigation.
+
+---
+
+## AI Image Generation
+
+Generate images from text prompts in the **Image Generate** workspace.
+
+### Features
+
+- Choose a provider and model.
+- Set image count, filename base, and dimensions.
+- Attach reference images from the gallery for image-to-image or style guidance.
+- Generated images are saved to the configured output directory and can be sent back to the gallery or opened in the editor.
+
+### Providers
+
+Cloud generation routes through the configured provider API. Local generation uses diffusers models installed in the active Python environment. Fine-tuned models appear in the model list once training completes.
+
+---
+
+## DarkRoom Editor
+
+The **DarkRoom** workspace opens the selected image in the [npcts](https://github.com/npc-worldwide/npcts) `ImageEditor` for adjustments, crops, filters, and generative fill.
+
+### Generative Fill
+
+Select a region in the editor and describe what you want to fill it with. Vixynt calls the configured image model to generate a replacement that matches the surrounding image.
+
+---
+
+## Video Generation
+
+Switch to **Video Generate** to create short AI videos.
+
+### Features
+
+- Prompt-to-video and image-to-video generation.
+- Configurable duration.
+- Generated clips can be added to the Video Editor or saved to disk.
+
+---
+
+## Video Editor
+
+The **Video Editor** workspace provides a timeline with video and audio tracks.
+
+### Features
+
+- Drag clips onto tracks.
+- Split clips at the playhead.
+- Add transitions and text layers.
+- Adjust zoom level and playback position.
+- Preview playback with play/pause/seek controls.
+
+---
+
+## Animation Studio
+
+The **Animation Studio** workspace lets you build frame-based animations.
+
+### Features
+
+- Add, reorder, and delete frames.
+- Set per-frame duration.
+- Preview playback with adjustable FPS.
+- Drag images directly into frames.
+
+---
+
+## Game Engine
+
+The **Game Engine** workspace is a lightweight 2D physics sandbox.
+
+### Features
+
+- Spawn circles, squares, and static platforms.
+- Adjust gravity and pause/resume simulation.
+- Click and drag bodies with the mouse.
+- Generate a scene from a natural-language prompt (spawns bodies based on keywords).
+- Useful for quick prototyping, reference motion, or fun experiments.
+
+---
+
+## Diffusion Fine-Tuning
+
+Train a custom diffusion model on your own images without leaving Vixynt.
+
+### How it works
+
+1. Select images in the Gallery.
+2. Open the fine-tune modal from the context menu.
+3. Choose captions: none, derived from filenames, or manually entered.
+4. Configure output name, epochs, batch size, and learning rate.
+5. Start training. Vixynt polls progress and shows loss history.
+6. The trained model is saved to the configured model output directory and becomes available for image generation.
+
+Training runs in a separate Python process using the configured backend environment, so the UI stays responsive.
+
+---
+
+## Workflow Editor
+
+The **Workflow** workspace provides a node editor for chaining image operations.
+
+### Node types
+
+- **Load Image** — read an image from disk.
+- **Generate** — create an image from a prompt or reference.
+- **Upscale** — increase resolution.
+- **Adjust** — brightness, contrast, saturation.
+- **Filter** — apply stylization.
+- **Mask** — create and edit masks.
+- **Gen Fill** — fill masked regions with AI.
+- **Save** — write the result to disk.
+
+Connect nodes by output/input ports to build reusable pipelines.
+
+---
+
+## Settings
+
+The Settings panel manages app preferences:
+
+- **Tracked Folders** — add/remove quick-access folders.
+- **Output Directories** — default paths for images and trained models.
+- **Backend Python Path** — Python interpreter used for AI backend tasks.
+- **Provider API Keys** — add keys for each cloud image/video provider.
+- **AI Features** — enable or disable AI-powered tabs.
+
+Settings are persisted in `localStorage` and the backend config.
+
+---
+
+## Development Setup
+
+Vixynt is an Electron + React + TypeScript frontend with a Python Flask backend powered by [npcpy](https://github.com/npc-worldwide/npcpy).
+
+### Prerequisites
+
+- Node.js 22+ and npm
+- Python 3.10+ with [npcpy](https://github.com/npc-worldwide/npcpy) installed
+- (Optional) A virtual environment with `torch`, `diffusers`, `transformers`, and `accelerate` for local AI features
+
+### Install
 
 ```bash
-git clone https://github.com/NPC-Worldwide/vixynt.git
+git clone https://github.com/npc-worldwide/vixynt.git
 cd vixynt
-pip install -r requirements.txt
-pip install -e .
+npm install --legacy-peer-deps
 ```
 
-## Core Modules
+### Run
 
-### 1. Data Augmentation (`data_augmentation.py`)
-
-The `ImageAugmentor` class generates N variations of input images with configurable artifact injection strategies.
-
-#### Features:
-
-- **Gaussian Noise**: Add controllable Gaussian noise for robustness
-- **JPEG Compression**: Simulate real-world compression artifacts
-- **Gaussian Blur**: Create blurred variations for scale invariance
-- **Color Jitter**: Random brightness, contrast, and saturation variations
-- **Individual Controls**: Adjust each artifact independently
-
-#### Usage:
-
-```python
-from vixynt.data_augmentation import ImageAugmentor
-
-# Initialize augmentor
-augmentor = ImageAugmentor(
-    num_variations=5,
-    noise_level=0.1,
-    jpeg_quality_range=(60, 95),
-    blur_sigma_range=(0.5, 2.0),
-    artifact_types=['gaussian_noise', 'jpeg_compression', 'blur', 'color_jitter']
-)
-
-# Generate variations for single image
-variations = augmentor.generate_variations(
-    'path/to/image.jpg',
-    output_dir='data/augmented',
-    save_images=True
-)
-
-# Batch augmentation
-stats = augmentor.batch_augment(
-    input_dir='data/raw',
-    output_dir='data/augmented'
-)
-
-print(f"Generated {stats['total_variations']} total variations from {stats['total_images']} images")
-```
-
-### Caption Generation
-
-The `CaptionGenerator` class creates descriptive captions for augmented images using vision models:
-
-```python
-from vixynt.data_augmentation import CaptionGenerator
-
-caption_gen = CaptionGenerator(model_name='clip')
-
-# Generate captions for variations
-captions = caption_gen.generate_captions_for_variations(
-    variations,
-    num_captions_per_image=3
-)
-
-for var_idx, caption_list in enumerate(captions):
-    print(f"Variation {var_idx}: {caption_list}")
-```
-
-### 2. ResNet-Based Augmentation (`resnet_augmentation.py`)
-
-The `ResNetAugmentor` class provides intelligent, feature-aware augmentation using pre-trained ResNet50 feature representations. This approach preserves semantic content while adding controlled variations.
-
-#### Advanced Features:
-
-- **Feature Space Perturbation**: Gaussian, uniform, or structured perturbations in ResNet feature space
-- **Spatial Attention Masking**: Randomly mask spatial regions to create diverse variations
-- **Frequency-Aware Augmentation**: FFT-based augmentation that preserves semantic content in low frequencies while adding controlled noise to high frequencies
-- **Layer-Specific Features**: Extract and perturb features from specific ResNet layers
-
-#### Usage:
-
-```python
-from vixynt.resnet_augmentation import ResNetAugmentor
-
-# Initialize ResNet augmentor
-resnet_augmentor = ResNetAugmentor(
-    num_variations=5,
-    resnet_layer='layer4',      # Deep features for semantic content
-    device='cuda' if torch.cuda.is_available() else 'cpu',
-    feature_perturbation_strength=0.1
-)
-
-# Generate feature-aware variations
-variations = resnet_augmentor.generate_variations(
-    'path/to/image.jpg',
-    output_dir='data/resnet_augmented',
-    save_images=True
-)
-
-# Batch processing with feature statistics
-stats = resnet_augmentor.batch_augment_with_features(
-    input_dir='data/raw',
-    output_dir='data/resnet_augmented',
-    feature_output_dir='data/features'
-)
-```
-
-#### Augmentation Strategies:
-
-1. **Gaussian Perturbation**: `N(features, σ)` - Adds Gaussian noise in feature space
-2. **Uniform Perturbation**: Adds uniform noise in feature space
-3. **Structured Perturbation**: Channel-wise scaling for more realistic variations
-4. **Frequency-Aware**: FFT-based augmentation in image space
-
-## Usage Example
-
-Complete workflow for creating a custom diffusion model:
-
-```python
-from vixynt.data_augmentation import ImageAugmentor, CaptionGenerator
-from vixynt.resnet_augmentation import ResNetAugmentor
-from npcpy.ft.diff import DiffusionFineTuner
-from vixynt.config import load_config
-
-# Step 1: Generate augmented variations
-augmentor = ImageAugmentor(num_variations=5)
-stats = augmentor.batch_augment(
-    input_dir='data/raw_photos',
-    output_dir='data/augmented'
-)
-print(f"Generated {stats['total_variations']} variations")
-
-# Step 2: Generate captions for training data
-caption_gen = CaptionGenerator(model_name='clip')
-# Process images and generate captions...
-
-# Step 3: Fine-tune diffusion model
-config = load_config('experiments/config.yaml')
-fine_tuner = DiffusionFineTuner(config)
-
-# Point to augmented dataset
-fine_tuner.train(data_path='data/augmented')
-
-# Step 4: Evaluate
-results = fine_tuner.evaluate()
-print(f"Model performance: {results}")
-
-# Step 5: Generate samples
-samples = fine_tuner.generate_samples(num_samples=10)
-for i, sample in enumerate(samples):
-    sample.save(f'figures/sample_{i}.png')
-```
-
-## Use Cases
-
-### 1. Personal Editing Style Transfer
-- Collect photos from your personal archive
-- Train a model on your edited versions with augmentation
-- Use the fine-tuned model to automatically apply your editing style to new photos
-
-### 2. Location-Specific Models
-- Gather photos from a specific location (Grand Canyon, etc.)
-- Create augmented training dataset
-- Fine-tune a model that generates images in that specific aesthetic
-
-### 3. Subject-Specific Models
-- Collect images of specific objects or scenes
-- Augment the dataset for diversity
-- Train a specialized model for that domain
-
-### 4. Artistic Style Capture
-- Combine style variations (e.g., hand-drawn, watercolor, oil painting)
-- Use augmentation to expand limited training data
-- Create a model that learns to apply that style
-
-## Configuration
-
-Create experiment configurations in `experiments/` directory:
-
-```yaml
-# experiments/my_style_transfer.yaml
-model:
-  name: "stable-diffusion-v1-5"
-  device: "cuda"
-  
-training:
-  num_epochs: 100
-  batch_size: 4
-  learning_rate: 1e-4
-  
-augmentation:
-  num_variations: 5
-  noise_level: 0.1
-  artifact_types: ["gaussian_noise", "jpeg_compression", "blur"]
-  
-data:
-  training_split: 0.8
-  validation_split: 0.1
-  test_split: 0.1
-```
-
-## Quick Start
-
-1. **Prepare raw images**: Place your images in `data/raw_photos/`
-
-2. **Generate augmented dataset**:
 ```bash
-python -c "
-from vixynt.data_augmentation import ImageAugmentor
-aug = ImageAugmentor(num_variations=5)
-aug.batch_augment('data/raw_photos', 'data/augmented')
-"
+# Terminal 1 — backend
+python vixynt_serve.py
+
+# Terminal 2 — frontend dev server
+npm run dev
 ```
 
-3. **Configure your experiment**: Edit or create `experiments/my_experiment.yaml`
+The dev frontend runs on port `7340` and connects to the backend on port `7140`.
 
-4. **Train**:
+### Build
+
 ```bash
-python src/vixynt/train.py --config experiments/my_experiment.yaml
+npm run build
 ```
 
-5. **Generate samples**: Check `figures/` directory for results
+This builds the renderer, Electron main, and preload scripts. To package the Electron app:
 
-6. **Evaluate model performance**:
 ```bash
-python src/vixynt/evaluate.py --model-path models/my_model.pth
+# macOS
+npx electron-builder --mac
+
+# Windows
+npx electron-builder --win
+
+# Linux
+npx electron-builder --linux
 ```
 
-## Advanced Features
+---
 
-### Custom Artifact Combinations
+## Community
 
-```python
-augmentor = ImageAugmentor(
-    num_variations=10,
-    artifact_types=['gaussian_noise', 'color_jitter', 'blur'],
-    seed=42  # For reproducibility
-)
-```
+- **Issues & Bugs**: [GitHub Issues](https://github.com/npc-worldwide/vixynt/issues)
+- **NPC Ecosystem**: [npcpy](https://github.com/npc-worldwide/npcpy) | [npcsh](https://github.com/npc-worldwide/npcsh) | [npcts](https://github.com/npc-worldwide/npcts)
 
-### ResNet Layer Selection
-
-Use different ResNet layers for different augmentation strategies:
-
-- `layer1`: Early features (edges, textures)
-- `layer2`: Mid-level features (shapes)
-- `layer3`: High-level features (objects)
-- `layer4`: Semantic features (scene understanding)
-
-```python
-augmentor = ResNetAugmentor(resnet_layer='layer3')  # Object-level features
-```
-
-### Frequency-Aware Augmentation
-
-Preserves semantic content by operating primarily on high frequencies:
-
-```python
-aug_image = augmentor.frequency_aware_augmentation(
-    image,
-    augmentation_strength=0.15
-)
-```
-
-## Experiments
-
-Results and configurations from various experiments are stored in the `experiments/` directory.
-
-### Test Datasets
-
-- Personal photo collection (varies by user)
-- Grand Canyon imagery (landscape aesthetics)
-- Kanji/calligraphy datasets (artistic style)
-
-## Contributing
-
-Contributions are welcome! Areas of interest:
-
-- Additional augmentation strategies
-- More vision models for caption generation
-- Diffusion model architecture improvements
-- Evaluation metrics and visualizations
-- Documentation and examples
-
-## References
-
-- [Hugging Face Diffusers](https://github.com/huggingface/diffusers)
-- [Stable Diffusion Fine-tuning](https://huggingface.co/docs/diffusers/training/text2image)
-- [ResNet Feature Extraction](https://pytorch.org/vision/main/models/resnet.html)
-- [npcpy.ft.diff Module](https://github.com/NPC-Worldwide/npcpy/blob/main/npcpy/ft/diff.py)
+---
 
 ## License
 
-See LICENSE for details.
+Vixynt is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
