@@ -23,6 +23,12 @@ export interface IElectronAPI {
   fineTuneDiffusers: (params: any) => Promise<any>;
   getFineTuneStatus: (jobId: string) => Promise<any>;
   getAvailableImageModels: (currentPath: string) => Promise<any>;
+  checkForUpdates: () => Promise<any>;
+  getAppVersion: () => Promise<string>;
+  downloadAndInstallUpdate: (opts: { releaseUrl: string }) => Promise<any>;
+  onUpdateDownloadProgress: (cb: (data: { progress: number; receivedBytes: number; totalBytes: number }) => void) => () => void;
+  openExternal: (url: string) => Promise<any>;
+  closeWindow: () => void;
   windowControls: {
     minimize: () => void;
     maximize: () => void;
@@ -64,6 +70,16 @@ contextBridge.exposeInMainWorld('api', {
   fineTuneDiffusers: (params: any) => ipcRenderer.invoke('finetune-diffusers', params),
   getFineTuneStatus: (jobId: string) => ipcRenderer.invoke('get-finetune-status', jobId),
   getAvailableImageModels: (currentPath: string) => ipcRenderer.invoke('getAvailableImageModels', currentPath),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  downloadAndInstallUpdate: (opts: any) => ipcRenderer.invoke('download-and-install-update', opts),
+  onUpdateDownloadProgress: (cb: any) => {
+    const handler = (_event: IpcRendererEvent, data: any) => cb(data);
+    ipcRenderer.on('update-download-progress', handler);
+    return () => ipcRenderer.removeListener('update-download-progress', handler);
+  },
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  closeWindow: () => ipcRenderer.send('window-close'),
   windowControls: {
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),

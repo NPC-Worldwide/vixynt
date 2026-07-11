@@ -20,6 +20,12 @@ export interface IElectronAPI {
   generativeFill: (params: any) => Promise<any>;
   fineTuneDiffusers: (params: any) => Promise<any>;
   getFineTuneStatus: (jobId: string) => Promise<any>;
+  checkForUpdates: () => Promise<any>;
+  getAppVersion: () => Promise<string>;
+  downloadAndInstallUpdate: (opts: { releaseUrl: string }) => Promise<any>;
+  onUpdateDownloadProgress: (cb: (data: { progress: number; receivedBytes: number; totalBytes: number }) => void) => () => void;
+  openExternal: (url: string) => Promise<any>;
+  closeWindow: () => void;
   windowControls: {
     minimize: () => void;
     maximize: () => void;
