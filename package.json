@@ -1,7 +1,7 @@
 {
   "name": "vixynt",
   "version": "0.1.1",
-  "description": "Vixynt - A standalone image and diffusion studio",
+  "description": "Vixynt - An image and diffusion studio",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "license": "MIT",
   "type": "module",
