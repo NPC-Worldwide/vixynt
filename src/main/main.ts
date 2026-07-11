@@ -342,7 +342,7 @@ ipcMain.handle('generate_images', async (_, { prompt, n, model, provider, attach
       const response = await fetch(`${BACKEND_URL}/api/generate_images`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, n, model, provider, attachments, baseFilename, currentPath }),
+        body: JSON.stringify({ prompt, n, model, provider, attachments, baseFilename, currentPath, width, height }),
       });
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));

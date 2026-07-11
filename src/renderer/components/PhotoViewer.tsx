@@ -98,6 +98,8 @@ const PhotoViewer = ({ currentPath }: { currentPath: string }) => {
     const filteredImages = sourceImages.filter(img => img.path.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const [numImagesToGenerate, setNumImagesToGenerate] = useState(1);
+    const [outputWidth, setOutputWidth] = useState(1024);
+    const [outputHeight, setOutputHeight] = useState(1024);
     const [selectedGeneratedImages, setSelectedGeneratedImages] = useState(new Set());
 
 
@@ -1363,6 +1365,10 @@ return (
             setNumImagesToGenerate={setNumImagesToGenerate}
             generateFilename={generateFilename}
             setGenerateFilename={setGenerateFilename}
+            outputWidth={outputWidth}
+            setOutputWidth={setOutputWidth}
+            outputHeight={outputHeight}
+            setOutputHeight={setOutputHeight}
             setError={setError}
             setSelectedImage={setSelectedImage}
             setActiveTab={setActiveTab}

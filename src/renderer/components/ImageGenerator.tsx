@@ -40,6 +40,10 @@ export interface ImageGeneratorProps {
   setNumImagesToGenerate: (n: number) => void;
   generateFilename: string;
   setGenerateFilename: (n: string) => void;
+  outputWidth: number;
+  setOutputWidth: (w: number) => void;
+  outputHeight: number;
+  setOutputHeight: (h: number) => void;
   setError: (msg: string | null) => void;
   setSelectedImage: (path: string | null) => void;
   setActiveTab: (tab: string) => void;
@@ -74,6 +78,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({
   setNumImagesToGenerate,
   generateFilename,
   setGenerateFilename,
+  outputWidth,
+  setOutputWidth,
+  outputHeight,
+  setOutputHeight,
   setError,
   setSelectedImage,
   setActiveTab,
@@ -367,6 +375,60 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Output Size</label>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="number"
+                    value={outputWidth}
+                    onChange={(e) =>
+                      setOutputWidth(Math.max(64, Math.min(4096, parseInt(e.target.value, 10) || 512)))
+                    }
+                    min="64"
+                    max="4096"
+                    step="64"
+                    className="flex-1 theme-input text-sm text-center"
+                    placeholder="Width"
+                  />
+                  <span className="text-gray-500 text-xs">×</span>
+                  <input
+                    type="number"
+                    value={outputHeight}
+                    onChange={(e) =>
+                      setOutputHeight(Math.max(64, Math.min(4096, parseInt(e.target.value, 10) || 512)))
+                    }
+                    min="64"
+                    max="4096"
+                    step="64"
+                    className="flex-1 theme-input text-sm text-center"
+                    placeholder="Height"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {[
+                    { label: 'Square', w: 1024, h: 1024 },
+                    { label: 'Landscape', w: 1024, h: 768 },
+                    { label: 'Portrait', w: 768, h: 1024 },
+                    { label: 'Wide', w: 1920, h: 1080 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => {
+                        setOutputWidth(preset.w);
+                        setOutputHeight(preset.h);
+                      }}
+                      className={`flex-1 py-1 text-[10px] rounded ${
+                        outputWidth === preset.w && outputHeight === preset.h
+                          ? 'bg-purple-600 text-white'
+                          : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </details>
         </div>
@@ -392,7 +454,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({
                   attachments,
                   baseFilename,
                   outputPath,
-                  { workspacePath: currentPath }
+                  { workspacePath: currentPath, width: outputWidth, height: outputHeight }
                 );
 
                 if (response.error) {
