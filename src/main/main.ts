@@ -76,6 +76,30 @@ function getBackendPythonPath(): string | null {
   return getPythonPath();
 }
 
+function getBackendScriptPath(): string | null {
+  // In packaged builds the script lives inside the app.asar archive. Node can
+  // read files through it, but Python cannot execute a path inside an asar.
+  // Extract the script to a real file in userData and run that instead.
+  const archivedPath = path.join(__dirname, '..', 'resources', 'vixynt_serve.py');
+  if (IS_DEV && fs.existsSync(archivedPath)) {
+    return archivedPath;
+  }
+
+  try {
+    const extractedDir = path.join(app.getPath('userData'), 'backend');
+    fs.mkdirSync(extractedDir, { recursive: true });
+    const extractedPath = path.join(extractedDir, 'vixynt_serve.py');
+    if (!fs.existsSync(extractedPath)) {
+      fs.writeFileSync(extractedPath, fs.readFileSync(archivedPath), { mode: 0o755 });
+      console.log('[Main] Extracted backend script to', extractedPath);
+    }
+    return extractedPath;
+  } catch (err) {
+    console.error('[Main] Failed to extract backend script:', err);
+    return null;
+  }
+}
+
 async function startBackend() {
   try {
     const controller = new AbortController();
@@ -91,6 +115,12 @@ async function startBackend() {
     return false;
   }
 
+  const scriptPath = getBackendScriptPath();
+  if (!scriptPath) {
+    console.error('[Main] Backend script vixynt_serve.py not available');
+    return false;
+  }
+
   const backendEnv = {
     ...process.env,
     VIXYNT_PORT: BACKEND_PORT,
@@ -102,7 +132,6 @@ async function startBackend() {
     NPCSH_BASE: path.join(os.homedir(), '.npcsh'),
   };
 
-  const scriptPath = path.join(__dirname, '..', 'resources', 'vixynt_serve.py');
   backendProcess = spawnBackendProcess(python, [scriptPath], backendEnv);
   return await waitForServer();
 }
