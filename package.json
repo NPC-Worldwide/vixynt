@@ -1,6 +1,6 @@
 {
   "name": "vixynt",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Vixynt - An image and diffusion studio",
   "author": "Chris Agostino <info@npcworldwi.de>",
   "license": "MIT",
@@ -51,8 +51,14 @@
     "files": [
       "dist-electron/**/*",
       "dist/**/*",
-      "resources/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": "**/*"
+      }
     ],
     "mac": {
       "icon": "vixynt.png",

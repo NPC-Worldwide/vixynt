@@ -54,6 +54,43 @@ const DarkRoom: React.FC<DarkRoomProps> = ({
     }
   };
 
+  const buildSelectionMask = async (
+    sel: any,
+    imageWidth: number,
+    imageHeight: number
+  ): Promise<string | null> => {
+    const c = document.createElement('canvas');
+    c.width = imageWidth;
+    c.height = imageHeight;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, imageWidth, imageHeight);
+
+    ctx.beginPath();
+    if (sel?.type === 'rect' && sel.x1 != null && sel.y1 != null && sel.x2 != null && sel.y2 != null) {
+      const x = (Math.min(sel.x1, sel.x2) / 100) * imageWidth;
+      const y = (Math.min(sel.y1, sel.y2) / 100) * imageHeight;
+      const w = (Math.abs(sel.x2 - sel.x1) / 100) * imageWidth;
+      const h = (Math.abs(sel.y2 - sel.y1) / 100) * imageHeight;
+      ctx.rect(x, y, w, h);
+    } else if (sel?.type === 'lasso' && Array.isArray(sel.points) && sel.points.length > 2) {
+      const pts = sel.points;
+      ctx.moveTo((pts[0].x / 100) * imageWidth, (pts[0].y / 100) * imageHeight);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo((pts[i].x / 100) * imageWidth, (pts[i].y / 100) * imageHeight);
+      }
+      ctx.closePath();
+    } else {
+      return null;
+    }
+
+    ctx.fillStyle = 'white';
+    ctx.fill();
+    return c.toDataURL('image/png');
+  };
+
   const handleGenerativeFill = async (
     sel: any,
     prompt: string,
@@ -63,16 +100,37 @@ const DarkRoom: React.FC<DarkRoomProps> = ({
       setError('Need a prompt');
       return;
     }
+    if (!selectedImage) {
+      setError('No image selected');
+      return;
+    }
+
     try {
-      const fsPath = (selectedImage || '').replace('media://', '');
-      const resp = await (window as any).api?.generativeFill?.(
-        fsPath,
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.src = selectedImage;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to load image for generative fill'));
+      });
+
+      const maskDataUrl = await buildSelectionMask(sel, img.naturalWidth, img.naturalHeight);
+      if (!maskDataUrl) {
+        setError('Invalid selection for generative fill');
+        return;
+      }
+
+      const fsPath = selectedImage.replace('media://', '');
+      const resp = await (window as any).api?.generativeFill?.({
+        imagePath: fsPath,
+        mask: maskDataUrl,
         prompt,
-        sel,
-        opts
-      );
+        model: opts?.model || selectedModel,
+        provider: opts?.provider || selectedProvider,
+      });
+
       if (resp?.error) throw new Error(resp.error);
-      if (resp?.path) setSelectedImage(`media://${resp.path}`);
+      if (resp?.resultPath) setSelectedImage(`media://${resp.resultPath}`);
     } catch (e: any) {
       setError(e.message || 'Generative fill failed');
     }

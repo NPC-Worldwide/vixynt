@@ -77,27 +77,12 @@ function getBackendPythonPath(): string | null {
 }
 
 function getBackendScriptPath(): string | null {
-  // In packaged builds the script lives inside the app.asar archive. Node can
-  // read files through it, but Python cannot execute a path inside an asar.
-  // Extract the script to a real file in userData and run that instead.
-  const archivedPath = path.join(__dirname, '..', 'resources', 'vixynt_serve.py');
-  if (IS_DEV && fs.existsSync(archivedPath)) {
-    return archivedPath;
-  }
-
-  try {
-    const extractedDir = path.join(app.getPath('userData'), 'backend');
-    fs.mkdirSync(extractedDir, { recursive: true });
-    const extractedPath = path.join(extractedDir, 'vixynt_serve.py');
-    if (!fs.existsSync(extractedPath)) {
-      fs.writeFileSync(extractedPath, fs.readFileSync(archivedPath), { mode: 0o755 });
-      console.log('[Main] Extracted backend script to', extractedPath);
-    }
-    return extractedPath;
-  } catch (err) {
-    console.error('[Main] Failed to extract backend script:', err);
-    return null;
-  }
+  const candidates = [
+    path.join(process.resourcesPath || '', 'resources', 'vixynt_serve.py'),
+    path.join(process.resourcesPath || '', 'vixynt_serve.py'),
+    path.resolve(__dirname, '..', 'resources', 'vixynt_serve.py'),
+  ];
+  return candidates.find(p => { try { return fs.existsSync(p); } catch { return false; } }) || null;
 }
 
 async function startBackend() {
@@ -210,8 +195,9 @@ function expandHomeDir(filePath: string): string {
 
 function resolveHelperScript(scriptName: string): string | null {
   const candidates = [
-    path.resolve(__dirname, '..', '..', 'resources', scriptName),
+    path.join(process.resourcesPath || '', 'resources', scriptName),
     path.join(process.resourcesPath || '', scriptName),
+    path.resolve(__dirname, '..', '..', 'resources', scriptName),
     path.join(app.getAppPath(), 'resources', scriptName),
   ];
   return candidates.find(p => { try { return fs.existsSync(p); } catch { return false; } }) || null;
