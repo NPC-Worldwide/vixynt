@@ -76,7 +76,10 @@ jobs:
             echo "ERROR: Imported identity is not a Developer ID Application certificate: $IDENTITY"
             exit 1
           fi
-          echo "CSC_NAME=$IDENTITY" >> $GITHUB_ENV
+          # electron-builder requires CSC_NAME without the "Developer ID Application:" prefix
+          CSC_NAME_VALUE=$(echo "$IDENTITY" | sed 's/^Developer ID Application: //')
+          echo "Using CSC_NAME=$CSC_NAME_VALUE"
+          echo "CSC_NAME=$CSC_NAME_VALUE" >> $GITHUB_ENV
 
       - name: Build Electron app
         shell: bash
